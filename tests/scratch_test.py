@@ -44,9 +44,11 @@ def check(rel_path: str) -> str:
         fake = np.zeros(inp["shape"], dtype=inp["dtype"])
         interp.set_tensor(inp["index"], fake)
         interp.invoke()
+        # Convert numpy int wrappers to plain Python ints for a clean repr.
+        shape_pretty = [int(d) for d in inp["shape"]]
         print(
             f"  [ok]   {rel_path}  "
-            f"input={list(inp['shape'])} {inp['dtype'].__name__}  "
+            f"input={shape_pretty} {inp['dtype'].__name__}  "
             f"outputs={len(outs)}"
         )
         return "ok"
