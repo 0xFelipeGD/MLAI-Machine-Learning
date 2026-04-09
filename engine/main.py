@@ -1,0 +1,131 @@
+"""
+engine/main.py — MLAI inference engine entry point.
+
+Runs the camera, dispatches each frame to the active module's pipeline,
+persists the result to SQLite, and updates the shared EngineState that
+the API serves to clients.
+
+Run from project root:
+    python -m engine.main
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import signal
+import time
+from typing import Optional
+
+import yaml
+
+from engine import PROJECT_ROOT
+from engine.camera import CameraService
+from engine.db import init_db, insert_agro_result, insert_indust_result, prune_old
+from engine.indust.heatmap import encode_b64
+from engine.indust.pipeline import IndustPipeline
+from engine.agro.pipeline import AgroPipeline
+from engine.state import STATE
+
+logger = logging.getLogger(__name__)
+
+
+class Engine:
+    def __init__(self) -> None:
+        cfg_path = PROJECT_ROOT / "config" / "system_config.yaml"
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            self.cfg = yaml.safe_load(fh) or {}
+        self.fps_target = int((self.cfg.get("camera") or {}).get("fps", 5))
+        self.num_threads = int((self.cfg.get("inference") or {}).get("num_threads", 4))
+        self.prune_days = int((self.cfg.get("storage") or {}).get("prune_after_days", 30))
+
+        self.camera = CameraService()
+        self.indust: Optional[IndustPipeline] = None
+        self.agro: Optional[AgroPipeline] = None
+        self._stop = asyncio.Event()
+        init_db()
+
+    # --------------------------------------------------------------- start
+    def start(self) -> None:
+        logger.info("Starting MLAI engine — default module=%s", STATE.active_module)
+        self.camera.start()
+        # Lazy-load pipelines so a missing model in one module doesn't stop the other.
+        try:
+            self.indust = IndustPipeline(num_threads=self.num_threads)
+        except Exception:
+            logger.exception("Failed to construct INDUST pipeline")
+        try:
+            self.agro = AgroPipeline(num_threads=self.num_threads)
+        except Exception:
+            logger.exception("Failed to construct AGRO pipeline")
+
+    def stop(self) -> None:
+        self.camera.stop()
+        self._stop.set()
+
+    def switch_module(self, module: str) -> None:
+        STATE.set_module(module)
+
+    # ---------------------------------------------------------------- loop
+    async def run(self) -> None:
+        period = 1.0 / max(self.fps_target, 1)
+        last_prune = time.time()
+        while not self._stop.is_set():
+            t0 = time.perf_counter()
+            frame = self.camera.read()
+            if frame is None:
+                await asyncio.sleep(0.1)
+                continue
+            try:
+                if STATE.paused:
+                    pass
+                elif STATE.active_module == "INDUST" and self.indust is not None:
+                    result, overlay = self.indust.process(frame)
+                    insert_indust_result(result.to_dict())
+                    STATE.update_indust(result.to_dict())
+                    STATE.update_frame(encode_b64(overlay), self.camera.get_fps())
+                elif STATE.active_module == "AGRO" and self.agro is not None:
+                    result, annotated = self.agro.process(frame)
+                    insert_agro_result(result.to_dict())
+                    STATE.update_agro(result.to_dict())
+                    STATE.update_frame(encode_b64(annotated), self.camera.get_fps())
+            except Exception:
+                logger.exception("frame processing failed")
+
+            # Periodic prune (once an hour)
+            if time.time() - last_prune > 3600:
+                try:
+                    n = prune_old(self.prune_days)
+                    if n:
+                        logger.info("Pruned %d old result rows", n)
+                except Exception:
+                    logger.exception("prune failed")
+                last_prune = time.time()
+
+            elapsed = time.perf_counter() - t0
+            if elapsed < period:
+                await asyncio.sleep(period - elapsed)
+
+
+async def _amain() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    engine = Engine()
+    engine.start()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, engine.stop)
+
+    try:
+        await engine.run()
+    finally:
+        engine.stop()
+    return 0
+
+
+def main() -> int:
+    return asyncio.run(_amain())
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

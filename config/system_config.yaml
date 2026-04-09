@@ -1,0 +1,58 @@
+# MLAI — System Configuration
+# Loaded by engine/main.py and api/main.py at startup.
+# Edit this file to change system-wide behavior. Restart services after editing.
+
+project:
+  name: "Machine Learning for Agriculture and Industry"
+  version: "1.0.0"
+
+system:
+  hostname: mlai
+  # Module that runs at startup. One of: INDUST | AGRO
+  default_module: INDUST
+
+camera:
+  # Capture resolution. Lower = faster, higher = more detail.
+  resolution: [640, 480]
+  # Target frames per second sent to the inference engine.
+  fps: 5
+  exposure_mode: auto
+  awb_mode: auto
+  # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
+  source: auto  # auto | picamera2 | opencv
+
+inference:
+  # TFLite XNNPACK threads. The Pi 4 has 4 cores.
+  num_threads: 4
+  log_level: INFO
+
+storage:
+  db_path: data/mlai.db
+  capture_dir: data/captures
+  # Auto-prune captures older than this many days.
+  prune_after_days: 30
+  # Hard cap on captures directory size in GB.
+  max_captures_gb: 5
+  # Trigger emergency prune when above this many GB.
+  emergency_prune_gb: 8
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+
+web:
+  port: 3000
+
+ipc:
+  # Unix socket used by api/ to receive frames from engine/.
+  socket_path: /tmp/mlai-frames.sock
+
+mqtt:
+  # Future expansion for remote monitoring.
+  enabled: false
+  broker: ""
+  port: 1883
+  topic_prefix: mlai/

@@ -1,0 +1,38 @@
+# INDUST module configuration — Industrial anomaly detection (PaDiM on MVTec AD)
+
+indust:
+  # Currently selected MVTec category. Switch via API or settings page.
+  active_category: bottle
+  model_dir: models/indust
+
+  # Default anomaly score threshold (0.0 = anything is OK, 1.0 = nothing is OK)
+  default_threshold: 0.5
+
+  # Per-category settings. Add entries here as you train more PaDiM models.
+  categories:
+    bottle:
+      model: padim_bottle.tflite
+      input_size: [256, 256]
+      threshold: 0.5
+      description: "Glass bottle defect detection"
+    metal_nut:
+      model: padim_metal_nut.tflite
+      input_size: [256, 256]
+      threshold: 0.45
+      description: "Metal nut surface defects"
+    screw:
+      model: padim_screw.tflite
+      input_size: [256, 256]
+      threshold: 0.55
+      description: "Threaded screw defects"
+
+  # Persistence flags
+  save_frames: true
+  save_heatmaps: true
+
+  # Segmentation / measurement
+  measurement:
+    # Minimum contour area (px²) considered a real object
+    min_contour_area: 500
+    # Pad bounding box by N px when cropping for measurement
+    bbox_padding: 8

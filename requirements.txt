@@ -1,0 +1,22 @@
+# MLAI Raspberry Pi runtime requirements.
+# (Training dependencies live in training/environment.yml — those run on a PC.)
+
+# Web framework
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+pydantic==2.9.*
+
+# Image / ML
+opencv-python-headless==4.10.*
+numpy<2.0
+pillow
+
+# TFLite inference (Pi-friendly)
+tflite-runtime ; platform_machine == "aarch64"
+
+# Camera (Pi only — install via apt: python3-picamera2)
+# picamera2 is provided by the Raspberry Pi OS package manager, not pip.
+
+# Misc
+pyyaml
+psutil

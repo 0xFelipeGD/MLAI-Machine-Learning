@@ -1,0 +1,39 @@
+# AGRO module configuration — Fruit detection, sizing, quality grading
+
+agro:
+  detector_model: models/agro/fruit_detector.tflite
+  quality_model: models/agro/fruit_quality.tflite
+
+  # SSD MobileNet V2 input
+  detector_input_size: [320, 320]
+  # MobileNet V2 quality classifier input
+  quality_input_size: [224, 224]
+
+  # Minimum confidence to keep a detection
+  detection_threshold: 0.5
+  # Non-max suppression IoU
+  nms_iou: 0.45
+  # Maximum detections per frame
+  max_detections: 20
+
+  # Classes the detector recognises (must match training labels.txt order)
+  fruit_classes:
+    - apple
+    - orange
+    - tomato
+
+  # Quality classifier output classes
+  quality_classes:
+    - good
+    - defective
+    - unripe
+
+  # Reference object used for px → mm fallback when no calibration is loaded
+  calibration:
+    reference_diameter_mm: 25.0
+    # When true, also estimate diameter from contour inside each detection
+    use_contour_refinement: true
+
+  # Persistence
+  save_frames: true
+  save_annotated: true

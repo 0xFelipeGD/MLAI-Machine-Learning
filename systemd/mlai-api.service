@@ -1,0 +1,23 @@
+[Unit]
+Description=MLAI REST + WebSocket API
+After=network-online.target mlai-engine.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/MLAI-Machine-Learning
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/pi/MLAI-Machine-Learning
+ExecStart=/usr/bin/python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
