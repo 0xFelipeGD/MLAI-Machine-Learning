@@ -2,7 +2,7 @@
 
 indust:
   # Currently selected MVTec category. Switch via API or settings page.
-  active_category: bottle
+  active_category: toothbrush
   model_dir: models/indust
 
   # Default anomaly score threshold (0.0 = anything is OK, 1.0 = nothing is OK)
@@ -10,6 +10,11 @@ indust:
 
   # Per-category settings. Add entries here as you train more PaDiM models.
   categories:
+    toothbrush:
+      model: padim_toothbrush.tflite
+      input_size: [256, 256]
+      threshold: 0.5
+      description: "Toothbrush head defect detection"
     bottle:
       model: padim_bottle.tflite
       input_size: [256, 256]

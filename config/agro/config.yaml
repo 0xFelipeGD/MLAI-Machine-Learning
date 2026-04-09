@@ -5,7 +5,7 @@ agro:
   quality_model: models/agro/fruit_quality.tflite
 
   # SSD MobileNet V2 input
-  detector_input_size: [320, 320]
+  detector_input_size: [300, 300]
   # MobileNet V2 quality classifier input
   quality_input_size: [224, 224]
 
@@ -16,11 +16,12 @@ agro:
   # Maximum detections per frame
   max_detections: 20
 
-  # Classes the detector recognises (must match training labels.txt order)
+  # Classes the detector recognises. Order must match the alphabetical
+  # order of the COCO indices we filter for: banana=52, apple=53, orange=55.
   fruit_classes:
     - apple
+    - banana
     - orange
-    - tomato
 
   # Quality classifier output classes
   quality_classes:

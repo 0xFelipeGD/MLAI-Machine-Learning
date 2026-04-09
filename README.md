@@ -137,17 +137,24 @@ See [`training/README.md`](training/README.md) for the full beginner-friendly wa
 
 ```bash
 cd training
-conda env create -f environment.yml
-conda activate mlai
+python3 -m venv ../.venv-train
+source ../.venv-train/bin/activate
+pip install "tensorflow==2.18.*" opencv-python pillow numpy tqdm requests
 
-# INDUST
-python indust/train_padim.py --category bottle --epochs 1
-python indust/export_tflite.py --category bottle --output ../models/indust/padim_bottle.tflite
+# INDUST — anomaly detection on a MVTec category (toothbrush by default)
+# Drop the bottle/toothbrush MVTec subset into datasets/mvtec/<category>/ first.
+python indust/train_autoencoder.py
 
-# AGRO
-python agro/prepare_dataset.py --source ~/Downloads/fruits-360 --output dataset/agro
-python agro/train_detector.py --dataset dataset/agro --output ../models/agro/fruit_detector.tflite
-python agro/train_quality.py  --dataset ~/Downloads/fruit-quality --output ../models/agro/fruit_quality.tflite
+# AGRO — pretrained COCO SSD for the detector (no training, just download)
+cd ../models/agro
+curl -L -o coco.zip https://storage.googleapis.com/download.tensorflow.org/models/tflite/coco_ssd_mobilenet_v1_1.0_quant_2018_06_29.zip
+unzip coco.zip && mv detect.tflite fruit_detector.tflite && mv labelmap.txt fruit_detector.labels.txt && rm coco.zip
+cd ../../training
+
+# AGRO quality classifier — transfer learning on Kaggle Fruits Fresh/Rotten
+# Drop the dataset into datasets/fruits/, then:
+python agro/reorganise_quality.py
+python agro/train_quality.py
 ```
 
 Then `scp` the resulting `.tflite` files to the Pi.

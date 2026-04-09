@@ -1,5 +1,6 @@
 # MLAI Raspberry Pi runtime requirements.
-# (Training dependencies live in training/environment.yml — those run on a PC.)
+# Training is done on a separate PC — see training/README.md for the
+# training-side dependencies (a venv with TensorFlow 2.18 + helpers).
 
 # Web framework
 fastapi==0.115.*

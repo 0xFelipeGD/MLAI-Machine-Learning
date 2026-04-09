@@ -23,12 +23,15 @@ MLAI model directories ready:
 
 Drop your trained models in like this:
 
-  models/indust/padim_bottle.tflite
-  models/indust/padim_metal_nut.tflite
-  models/indust/padim_screw.tflite
+  models/indust/padim_toothbrush.tflite     ← or padim_bottle.tflite, etc.
+                                              (must match config/indust/config.yaml
+                                               active_category and categories list)
 
-  models/agro/fruit_detector.tflite
-  models/agro/fruit_quality.tflite
+  models/agro/fruit_detector.tflite         ← COCO SSD MobileNet V1 from
+                                              training/README.md §3 (no training)
+  models/agro/fruit_detector.labels.txt     ← bundled with the COCO SSD download
+  models/agro/fruit_quality.tflite          ← from training/README.md §4
+  models/agro/fruit_quality.labels.txt      ← written by train_quality.py
 
 To train them yourself see training/README.md.
 

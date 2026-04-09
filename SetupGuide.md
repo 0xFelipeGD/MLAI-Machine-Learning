@@ -213,22 +213,30 @@ You should see the MLAI dashboard with live CPU/RAM gauges, a module switcher, a
 
 ## 12. Training Your Own Models (Optional)
 
-This step happens **on your PC**, not the Pi. See [`training/README.md`](training/README.md) for the full walkthrough. The short version:
+This step happens **on your PC**, not the Pi. See [`training/README.md`](training/README.md) for the full beginner-friendly walkthrough. The short version:
 
 ```bash
 # On your PC
-cd MLAI-Machine-Learning/training
-conda env create -f environment.yml
-conda activate mlai
+cd MLAI-Machine-Learning
+python3 -m venv .venv-train
+source .venv-train/bin/activate
+pip install "tensorflow==2.18.*" opencv-python pillow numpy tqdm requests
+cd training
 
-# INDUST
-python indust/train_padim.py --category bottle --epochs 1
-python indust/export_tflite.py --category bottle --output ../models/indust/padim_bottle.tflite
+# INDUST — anomaly detection (autoencoder on a MVTec category)
+# Download the MVTec subset (e.g. toothbrush) into datasets/mvtec/<category>/ first
+python indust/train_autoencoder.py
 
-# AGRO
-python agro/prepare_dataset.py --source ~/Downloads/fruits-360 --output dataset/agro
-python agro/train_detector.py  --dataset dataset/agro --output ../models/agro/fruit_detector.tflite
-python agro/train_quality.py   --dataset ~/Downloads/fruit-quality --output ../models/agro/fruit_quality.tflite
+# AGRO detector — pretrained COCO SSD MobileNet V1 (no training, just download)
+cd ../models/agro
+curl -L -o coco.zip https://storage.googleapis.com/download.tensorflow.org/models/tflite/coco_ssd_mobilenet_v1_1.0_quant_2018_06_29.zip
+unzip coco.zip && mv detect.tflite fruit_detector.tflite && mv labelmap.txt fruit_detector.labels.txt && rm coco.zip
+cd ../../training
+
+# AGRO quality classifier — transfer learning on Kaggle Fruits Fresh/Rotten
+# Download the dataset into datasets/fruits/ first
+python agro/reorganise_quality.py
+python agro/train_quality.py
 ```
 
 Copy the resulting `.tflite` files to the Pi:

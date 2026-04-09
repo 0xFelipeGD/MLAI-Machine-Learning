@@ -37,7 +37,7 @@ class QualityClassifier:
         self._inp = None
         self._out = None
         self.input_size: Tuple[int, int] = (224, 224)
-        self.classes: List[str] = ["good", "defective", "unripe"]
+        self.classes: List[str] = ["good", "defective"]
         self.mock = False
 
     def load(self, model_path: Path, input_size: Tuple[int, int], classes: List[str]) -> None:

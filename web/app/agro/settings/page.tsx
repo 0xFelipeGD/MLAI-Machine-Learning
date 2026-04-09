@@ -8,7 +8,7 @@ import type { AgroStatus } from "@/lib/types";
 export default function AgroSettingsPage() {
   const [status, setStatus] = useState<AgroStatus | null>(null);
   const [threshold, setThreshold] = useState(0.5);
-  const [classes, setClasses] = useState("apple,orange,tomato");
+  const [classes, setClasses] = useState("apple,banana,orange");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -66,7 +66,7 @@ export default function AgroSettingsPage() {
           <input
             value={classes}
             onChange={(e) => setClasses(e.target.value)}
-            placeholder="apple,orange,tomato"
+            placeholder="apple,banana,orange"
             className="w-full bg-[var(--color-bg)] border border-[var(--color-border-strong)] px-3 py-2 font-mono text-[12px] focus:border-[var(--color-accent)] focus:outline-none"
           />
           <div className="text-[10px] text-[var(--color-text-mute)] mt-2">
