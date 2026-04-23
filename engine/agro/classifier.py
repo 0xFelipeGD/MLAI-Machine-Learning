@@ -18,16 +18,21 @@ logger = logging.getLogger(__name__)
 
 _INTERPRETER = None
 try:
-    from tflite_runtime.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
+    from ai_edge_litert.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
 
     _INTERPRETER = _TFLiteInterpreter
 except Exception:
     try:
-        from tensorflow.lite.python.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
+        from tflite_runtime.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
 
         _INTERPRETER = _TFLiteInterpreter
     except Exception:
-        _INTERPRETER = None
+        try:
+            from tensorflow.lite.python.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
+
+            _INTERPRETER = _TFLiteInterpreter
+        except Exception:
+            _INTERPRETER = None
 
 
 class QualityClassifier:

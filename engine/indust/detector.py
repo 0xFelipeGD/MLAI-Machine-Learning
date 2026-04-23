@@ -23,19 +23,25 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Prefer the lightweight tflite_runtime; fall back to full TF; allow neither.
+# Prefer LiteRT (ai-edge-litert, Google's successor to tflite-runtime),
+# then legacy tflite_runtime, then full TensorFlow, then give up → MOCK MODE.
 _INTERPRETER = None
 try:
-    from tflite_runtime.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
+    from ai_edge_litert.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
 
     _INTERPRETER = _TFLiteInterpreter
 except Exception:
     try:
-        from tensorflow.lite.python.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
+        from tflite_runtime.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
 
         _INTERPRETER = _TFLiteInterpreter
-    except Exception:  # pragma: no cover
-        _INTERPRETER = None
+    except Exception:
+        try:
+            from tensorflow.lite.python.interpreter import Interpreter as _TFLiteInterpreter  # type: ignore
+
+            _INTERPRETER = _TFLiteInterpreter
+        except Exception:  # pragma: no cover
+            _INTERPRETER = None
 
 
 class PaDiMDetector:

@@ -9,11 +9,14 @@ pydantic==2.9.*
 
 # Image / ML
 opencv-python-headless==4.10.*
-numpy<2.0
+numpy>=1.26,<3
 pillow
 
-# TFLite inference (Pi-friendly)
-tflite-runtime ; platform_machine == "aarch64"
+# TFLite / LiteRT inference (Pi-friendly).
+# Google renamed tflite-runtime to ai-edge-litert and stopped publishing
+# tflite-runtime wheels for new Python versions. ai-edge-litert has
+# cp313 aarch64 wheels — same TFLite under the hood, new import path.
+ai-edge-litert ; platform_machine == "aarch64"
 
 # Camera (Pi only — install via apt: python3-picamera2)
 # picamera2 is provided by the Raspberry Pi OS package manager, not pip.
