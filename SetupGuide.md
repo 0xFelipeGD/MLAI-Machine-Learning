@@ -32,7 +32,7 @@
 6. Click the gear icon (⚙) to open Advanced Options:
    - Set hostname to `mlai`
    - Enable SSH (use password authentication for now)
-   - Set username `pi` and a password you'll remember
+   - Set username `felipe` and a password you'll remember (this guide assumes `felipe` — if you pick a different username you'll need to edit the `systemd/*.service` files before §10)
    - Configure your Wi-Fi (or skip if using Ethernet)
    - Set locale and timezone
 7. Click **Save** then **Write**. Wait until it finishes (~5 minutes).
@@ -47,7 +47,7 @@
 The Pi takes ~30 seconds to boot the first time. Then from your PC:
 
 ```bash
-ssh pi@mlai.local
+ssh felipe@mlai.local
 ```
 
 If `mlai.local` does not resolve, find the Pi's IP from your router and use that instead. You'll be prompted for the password you set above.
@@ -101,37 +101,75 @@ npm --version
 
 ```bash
 cd ~
-git clone https://github.com/<you>/MLAI-Machine-Learning.git
+git clone git@github.com:0xFelipeGD/MLAI-Machine-Learning.git
 cd MLAI-Machine-Learning
 ```
+
+> `git@github.com:...` is the SSH form, so you'll need an SSH key on the Pi that's added to your GitHub account. If you haven't set that up yet, the quickest path is:
+> ```bash
+> ssh-keygen -t ed25519 -C "felipe@mlai"       # press Enter through prompts
+> cat ~/.ssh/id_ed25519.pub                    # copy this output
+> # then paste into https://github.com/settings/keys → New SSH key
+> ```
+> If you'd rather skip keys for now, use the HTTPS form instead: `git clone https://github.com/0xFelipeGD/MLAI-Machine-Learning.git`.
 
 Install Python packages:
 
 ```bash
-pip3 install -r requirements.txt
+pip3 install -r requirements.txt --break-system-packages
 ```
+
+> `--break-system-packages` is required on Raspberry Pi OS Bookworm (PEP 668). We install into the system Python on purpose — `picamera2` ships as a system package (`python3-picamera2`) and isn't available on PyPI, so the engine must run under the same system interpreter.
 
 This pulls FastAPI, OpenCV, NumPy, etc. It will take a few minutes.
 
----
-
-## 7. Downloading ML Models
-
-MLAI does **not** ship pre-trained models — different users want different categories. You have two options:
-
-**Option A — train your own** (best results). See section 12 below or [`training/README.md`](training/README.md).
-
-**Option B — start with mock mode** (no models). Skip ahead — the engine will produce fake but plausible-looking predictions so you can verify the dashboard works.
-
-If you trained your own models, run:
+Now build the web dashboard (required — `mlai-web.service` runs `next start`, which needs a production build):
 
 ```bash
-bash scripts/download_models.sh   # creates the directories
-# then scp your .tflite files in:
-#   models/indust/padim_bottle.tflite
-#   models/agro/fruit_detector.tflite
-#   models/agro/fruit_quality.tflite
+cd web
+npm install
+NEXT_PUBLIC_API_BASE=http://localhost:8000 npm run build
+cd ..
 ```
+
+`NEXT_PUBLIC_API_BASE` is inlined into the client bundle at build time. Setting it to `http://localhost:8000` means the browser (running on the Pi, or reaching the Pi over an SSH tunnel that forwards port 8000) will talk to the FastAPI directly.
+
+---
+
+## 7. Transferring the ML Models to the Pi
+
+The `.tflite` / `.keras` / `.labels.txt` files are **not** in the Git repo (they're in `.gitignore`) because ML artifacts are large and user-specific. You copy them from your PC to the Pi over SSH with `scp`.
+
+First, on the Pi, create the target folders:
+
+```bash
+bash scripts/download_models.sh   # just creates models/indust/ and models/agro/
+```
+
+Then, **on your PC** (from the repo root — the folder that contains `models/`), push the whole directory to the Pi in one shot:
+
+```bash
+# Run this on your PC, NOT on the Pi
+scp -r models/ felipe@mlai.local:~/MLAI-Machine-Learning/
+```
+
+This uploads:
+
+```
+models/indust/padim_toothbrush.tflite           → ~/MLAI-Machine-Learning/models/indust/
+models/agro/fruit_detector.tflite + .labels.txt → ~/MLAI-Machine-Learning/models/agro/
+models/agro/fruit_quality.tflite + .labels.txt  → ~/MLAI-Machine-Learning/models/agro/
+```
+
+Back on the Pi, verify the files landed:
+
+```bash
+ls -lh ~/MLAI-Machine-Learning/models/indust/ ~/MLAI-Machine-Learning/models/agro/
+```
+
+You should see the `.tflite` and `.labels.txt` files. If any are missing, the engine falls back to **mock mode** for that module (fake but plausible predictions) so the dashboard still boots — handy for troubleshooting.
+
+> **Don't have trained models yet?** Skip this whole section. The engine auto-detects missing files and starts in mock mode. Come back here after you've trained models on your PC (section 12).
 
 ---
 
@@ -195,19 +233,24 @@ journalctl -u mlai-engine -f
 
 ## 11. Accessing the Dashboard
 
-Find your Pi's IP:
+The dashboard is served on the Pi at `http://localhost:3000`, with the API on `http://localhost:8000`. Because the client bundle is built with `NEXT_PUBLIC_API_BASE=http://localhost:8000`, the browser expects both ports to resolve to the Pi. The simplest, most reliable way to view it from your PC is an SSH tunnel that forwards both ports:
 
 ```bash
-hostname -I
+# Run this on your PC (keep the terminal open while you use the dashboard)
+ssh -L 3000:localhost:3000 -L 8000:localhost:8000 felipe@mlai.local
 ```
 
-From any computer on the same network, open a browser to:
+Then open a browser on your PC at:
 
 ```
-http://<that-ip>:3000
+http://localhost:3000
 ```
 
 You should see the MLAI dashboard with live CPU/RAM gauges, a module switcher, and the live camera feed.
+
+> **Alternative (dashboard open on the Pi itself):** if you have a monitor attached to the Pi, just launch Chromium on the Pi and visit `http://localhost:3000`.
+>
+> **Alternative (direct LAN access, e.g. `http://<pi-ip>:3000`):** requires rebuilding the frontend with `NEXT_PUBLIC_API_BASE=http://<pi-ip>:8000` instead, because `NEXT_PUBLIC_*` values are baked in at build time. Not needed for the SSH-tunnel workflow above.
 
 ---
 
@@ -242,10 +285,12 @@ python agro/train_quality.py
 Copy the resulting `.tflite` files to the Pi:
 
 ```bash
-scp models/indust/*.tflite pi@mlai.local:~/MLAI-Machine-Learning/models/indust/
-scp models/agro/*.tflite   pi@mlai.local:~/MLAI-Machine-Learning/models/agro/
-ssh pi@mlai.local "sudo systemctl restart mlai-engine"
+scp models/indust/*.tflite models/indust/*.labels.txt felipe@mlai.local:~/MLAI-Machine-Learning/models/indust/ 2>/dev/null || true
+scp models/agro/*.tflite   models/agro/*.labels.txt   felipe@mlai.local:~/MLAI-Machine-Learning/models/agro/
+ssh felipe@mlai.local "sudo systemctl restart mlai-engine"
 ```
+
+(The INDUST `.labels.txt` is optional — PaDiM doesn't use one — hence the `|| true`.)
 
 ---
 

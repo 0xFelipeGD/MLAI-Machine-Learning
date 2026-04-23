@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/MLAI-Machine-Learning/web
+User=felipe
+Group=felipe
+WorkingDirectory=/home/felipe/MLAI-Machine-Learning/web
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000

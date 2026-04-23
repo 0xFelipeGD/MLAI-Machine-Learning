@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/MLAI-Machine-Learning
+User=felipe
+Group=felipe
+WorkingDirectory=/home/felipe/MLAI-Machine-Learning
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/home/pi/MLAI-Machine-Learning
+Environment=PYTHONPATH=/home/felipe/MLAI-Machine-Learning
 ExecStart=/usr/bin/python3 -m engine.main
 Restart=always
 RestartSec=3

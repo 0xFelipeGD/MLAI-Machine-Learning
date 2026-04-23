@@ -9,27 +9,14 @@ indust:
   default_threshold: 0.5
 
   # Per-category settings. Add entries here as you train more PaDiM models.
+  # Only categories with a trained .tflite in models/indust/ should be listed —
+  # selecting a category without a model raises a runtime error.
   categories:
     toothbrush:
       model: padim_toothbrush.tflite
       input_size: [256, 256]
       threshold: 0.5
       description: "Toothbrush head defect detection"
-    bottle:
-      model: padim_bottle.tflite
-      input_size: [256, 256]
-      threshold: 0.5
-      description: "Glass bottle defect detection"
-    metal_nut:
-      model: padim_metal_nut.tflite
-      input_size: [256, 256]
-      threshold: 0.45
-      description: "Metal nut surface defects"
-    screw:
-      model: padim_screw.tflite
-      input_size: [256, 256]
-      threshold: 0.55
-      description: "Threaded screw defects"
 
   # Persistence flags
   save_frames: true
