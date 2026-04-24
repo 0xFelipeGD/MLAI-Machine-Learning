@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
-import type { HealthResponse, Module } from "@/lib/types";
+import type { HealthResponse } from "@/lib/types";
 
 function Pill({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "fault" | "info" }) {
   const colors: Record<string, string> = {
@@ -44,14 +44,6 @@ export function Topbar() {
     };
   }, []);
 
-  const setModule = async (m: Module) => {
-    try {
-      await api.setModule(m);
-      const h = await api.health();
-      setHealth(h);
-    } catch {}
-  };
-
   const cpuTone = !health ? "fault" : health.cpu_percent < 60 ? "ok" : health.cpu_percent < 85 ? "warn" : "fault";
   const ramTone = !health ? "fault" : health.ram_percent < 70 ? "ok" : health.ram_percent < 90 ? "warn" : "fault";
 
@@ -67,22 +59,10 @@ export function Topbar() {
           />
           <span className="label">{health ? "Online" : "Offline"}</span>
         </div>
-
-        <div className="ml-2 flex items-center gap-1 panel p-0.5">
-          {(["INDUST", "AGRO"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setModule(m)}
-              className={clsx(
-                "px-3 py-1 text-[11px] font-mono uppercase tracking-wider transition-colors",
-                health?.active_module === m
-                  ? "bg-[var(--color-accent)] text-[var(--color-bg)]"
-                  : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-              )}
-            >
-              {m}
-            </button>
-          ))}
+        <div className="ml-2 panel px-3 py-1">
+          <span className="text-[11px] font-mono uppercase tracking-wider text-[var(--color-accent)]">
+            AGRO
+          </span>
         </div>
       </div>
 

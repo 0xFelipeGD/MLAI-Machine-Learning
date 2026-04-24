@@ -1,0 +1,27 @@
+# MLAI training-time requirements (PC, not the Raspberry Pi).
+# See requirements.txt at the repo root for Pi runtime dependencies.
+#
+# Install with:
+#   source .venv-train/bin/activate
+#   pip install -r training/requirements.txt
+
+# Core ML / training
+tensorflow==2.18.*
+numpy>=1.26,<3
+pillow
+opencv-python
+tqdm
+requests
+
+# Engine + API deps — pinned to the same versions the Pi uses so the §4
+# verification tests can import the engine modules and exercise the FastAPI
+# app without version drift.
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+pydantic==2.9.*
+pyyaml
+psutil
+
+# Tests
+pytest
+httpx   # required by fastapi.testclient.TestClient; not pulled in by fastapi

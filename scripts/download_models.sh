@@ -1,41 +1,69 @@
 #!/usr/bin/env bash
-# scripts/download_models.sh — Prepare the models/ directory.
+# scripts/download_models.sh — Download trained .tflite models from GitHub Releases.
 #
-# MLAI does not ship pre-trained .tflite files (different users want different
-# categories). Run training/ on your PC and copy the resulting files to the
-# locations printed below. This script just creates the folders and prints
-# instructions.
+# Why a release instead of committing / git-LFS?
+#   The .tflite binaries are excluded from the repo history via .gitignore
+#   (commits would bloat the repo every retrain). They live as assets on a
+#   tagged GitHub Release — version-pinned, cacheable, and free.
+#
+# Usage:
+#   ./scripts/download_models.sh                  # pulls DEFAULT_TAG
+#   MLAI_MODELS_TAG=v1.2.0 ./scripts/download_models.sh
+#   ./scripts/download_models.sh v1.2.0           # positional tag override
+#
+# Requirements: curl.
+#
+# The release must contain these assets (flat, not zipped):
+#   fruit_detector.tflite
+#   fruit_detector.labels.txt
+#   fruit_quality.tflite
+#   fruit_quality.labels.txt
+#
+# If the release or an asset is missing, this script exits non-zero so the
+# error is loud — the engine would otherwise silently fall back to MOCK MODE.
 
 set -euo pipefail
 
+# ---- Config ------------------------------------------------------------------
+REPO="0xFelipeGD/MLAI-Machine-Learning"
+DEFAULT_TAG="v1.0.0"
+TAG="${1:-${MLAI_MODELS_TAG:-${DEFAULT_TAG}}}"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INDUST_DIR="${ROOT}/models/indust"
 AGRO_DIR="${ROOT}/models/agro"
+mkdir -p "${AGRO_DIR}"
 
-mkdir -p "${INDUST_DIR}" "${AGRO_DIR}"
+ASSETS=(
+    fruit_detector.tflite
+    fruit_detector.labels.txt
+    fruit_quality.tflite
+    fruit_quality.labels.txt
+)
 
-cat <<EOF
-================================================================
-MLAI model directories ready:
+BASE="https://github.com/${REPO}/releases/download/${TAG}"
 
-  ${INDUST_DIR}
-  ${AGRO_DIR}
+# ---- Download ----------------------------------------------------------------
+echo "Fetching MLAI models from release ${TAG} of ${REPO}..."
+for asset in "${ASSETS[@]}"; do
+    dest="${AGRO_DIR}/${asset}"
+    url="${BASE}/${asset}"
+    echo "  -> ${asset}"
+    # --fail: exit non-zero on HTTP error; -L: follow redirects; -sS: silent but show errors.
+    if ! curl --fail -L -sS -o "${dest}" "${url}"; then
+        echo "ERROR: failed to download ${url}" >&2
+        echo "Check that release ${TAG} exists and contains ${asset} as a flat asset." >&2
+        exit 1
+    fi
+done
 
-Drop your trained models in like this:
+# ---- Verify ------------------------------------------------------------------
+echo
+echo "Models installed in ${AGRO_DIR}:"
+for asset in "${ASSETS[@]}"; do
+    f="${AGRO_DIR}/${asset}"
+    size=$(stat -c '%s' "${f}" 2>/dev/null || stat -f '%z' "${f}")
+    printf "  %-32s %s bytes\n" "${asset}" "${size}"
+done
 
-  models/indust/padim_toothbrush.tflite     ← or padim_bottle.tflite, etc.
-                                              (must match config/indust/config.yaml
-                                               active_category and categories list)
-
-  models/agro/fruit_detector.tflite         ← COCO SSD MobileNet V1 from
-                                              training/README.md §3 (no training)
-  models/agro/fruit_detector.labels.txt     ← bundled with the COCO SSD download
-  models/agro/fruit_quality.tflite          ← from training/README.md §4
-  models/agro/fruit_quality.labels.txt      ← written by train_quality.py
-
-To train them yourself see training/README.md.
-
-If a model file is missing the engine starts in MOCK MODE so the
-rest of the system (camera, API, dashboard) still works for development.
-================================================================
-EOF
+echo
+echo "Done. The engine will pick these up on next start."

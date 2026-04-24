@@ -42,12 +42,23 @@ class QualityClassifier:
         self._inp = None
         self._out = None
         self.input_size: Tuple[int, int] = (224, 224)
-        self.classes: List[str] = ["good", "defective"]
+        self.classes: List[str] = ["defective", "good"]
         self.mock = False
+
+    @staticmethod
+    def _load_labels(model_path: Path) -> List[str]:
+        labels_path = model_path.parent / f"{model_path.stem}.labels.txt"
+        if not labels_path.exists():
+            return []
+        return [ln.strip() for ln in labels_path.read_text().splitlines() if ln.strip()]
 
     def load(self, model_path: Path, input_size: Tuple[int, int], classes: List[str]) -> None:
         self.input_size = input_size
-        self.classes = list(classes)
+        # A .labels.txt next to the .tflite is written by training/agro/train_quality.py
+        # and reflects the actual class order the model was trained on (alphabetical,
+        # from Keras' ImageDataset.class_names). Prefer it over the caller-supplied
+        # list, which may be a stale copy living in config/agro/config.yaml.
+        self.classes = self._load_labels(Path(model_path)) or list(classes)
         if _INTERPRETER is None or not Path(model_path).exists():
             logger.warning("QualityClassifier: model unavailable (%s) — MOCK MODE", model_path)
             self.mock = True

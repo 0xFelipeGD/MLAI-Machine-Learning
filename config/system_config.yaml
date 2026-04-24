@@ -3,13 +3,11 @@
 # Edit this file to change system-wide behavior. Restart services after editing.
 
 project:
-  name: "Machine Learning for Agriculture and Industry"
+  name: "Machine Learning for Agriculture (Fruit Inspection)"
   version: "1.0.0"
 
 system:
   hostname: mlai
-  # Module that runs at startup. One of: INDUST | AGRO
-  default_module: INDUST
 
 camera:
   # Capture resolution. Lower = faster, higher = more detail.

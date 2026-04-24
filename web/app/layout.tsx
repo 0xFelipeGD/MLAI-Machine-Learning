@@ -4,8 +4,8 @@ import { Sidebar } from "@/components/scada/Sidebar";
 import { Topbar } from "@/components/scada/Topbar";
 
 export const metadata: Metadata = {
-  title: "MLAI — Industrial Inspection",
-  description: "Edge AI visual inspection for industry & agriculture",
+  title: "MLAI — Fruit Inspection",
+  description: "Edge AI visual inspection for fruit detection & grading",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

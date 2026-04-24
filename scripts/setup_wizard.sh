@@ -143,15 +143,14 @@ ok "Python dependencies installed"
 # ------------------------------------------------------- step: model dirs
 step "Step 5/8 — Preparing model directories"
 bash "$REPO_ROOT/scripts/download_models.sh" >/dev/null
-ok "models/indust and models/agro created"
+ok "models/agro created"
 
-INDUST_MODELS=$(find "$REPO_ROOT/models/indust" -maxdepth 1 -name '*.tflite' 2>/dev/null | wc -l)
-AGRO_MODELS=$(find "$REPO_ROOT/models/agro"   -maxdepth 1 -name '*.tflite' 2>/dev/null | wc -l)
-if (( INDUST_MODELS == 0 && AGRO_MODELS == 0 )); then
+AGRO_MODELS=$(find "$REPO_ROOT/models/agro" -maxdepth 1 -name '*.tflite' 2>/dev/null | wc -l)
+if (( AGRO_MODELS == 0 )); then
     warn "No .tflite files found yet. Engine will run in MOCK MODE until you scp them from your PC."
     info "See SetupGuide.md §7 / training/README.md."
 else
-    ok "Found ${INDUST_MODELS} INDUST and ${AGRO_MODELS} AGRO model file(s)"
+    ok "Found ${AGRO_MODELS} AGRO model file(s)"
 fi
 
 # ---------------------------------------------------------- step: camera
@@ -221,8 +220,7 @@ Next steps:
 
   4. Missing .tflite files? Train them on your PC (training/README.md) and:
 
-        scp models/indust/*.tflite felipe@mlai.local:~/MLAI-Machine-Learning/models/indust/
-        scp models/agro/*.tflite   felipe@mlai.local:~/MLAI-Machine-Learning/models/agro/
+        scp models/agro/*.tflite felipe@mlai.local:~/MLAI-Machine-Learning/models/agro/
         ssh felipe@mlai.local "sudo systemctl restart mlai-engine"
 
 EOF

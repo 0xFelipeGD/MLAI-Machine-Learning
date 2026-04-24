@@ -2,20 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Apple, Cog, Cpu, Factory, Gauge, History, Settings, Sliders } from "lucide-react";
+import { Activity, Apple, Cog, Cpu, Gauge, History, Sliders } from "lucide-react";
 
 const NAV: { group: string; items: { href: string; label: string; Icon: typeof Gauge }[] }[] = [
   {
     group: "Overview",
     items: [{ href: "/", label: "Dashboard", Icon: Gauge }],
-  },
-  {
-    group: "Indust",
-    items: [
-      { href: "/indust", label: "Live Inspection", Icon: Factory },
-      { href: "/indust/history", label: "History", Icon: History },
-      { href: "/indust/settings", label: "Settings", Icon: Sliders },
-    ],
   },
   {
     group: "Agro",
@@ -43,7 +35,7 @@ export function Sidebar() {
           <Activity size={18} className="text-[var(--color-accent)]" />
           <span className="font-mono text-[15px] font-semibold tracking-tight">MLAI</span>
         </div>
-        <div className="label mt-1">v1.0 • Edge Inspection</div>
+        <div className="label mt-1">v1.0 • Fruit Inspection</div>
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
         {NAV.map((g) => (

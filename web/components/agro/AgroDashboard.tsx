@@ -43,7 +43,7 @@ export function AgroDashboard() {
   return (
     <div className="grid grid-cols-12 gap-4">
       <div className="col-span-12 xl:col-span-8">
-        <LiveFeed module="AGRO" onResult={onResult} />
+        <LiveFeed onResult={onResult} />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
           <MeasurementCard label="Detections" value={live.total} />
           <MeasurementCard label="Avg Diameter" value={avgDiameter} unit="mm" />

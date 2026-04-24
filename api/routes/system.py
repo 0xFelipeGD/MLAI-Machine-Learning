@@ -1,5 +1,5 @@
 """
-api/routes/system.py — System health and module switching.
+api/routes/system.py — System health and info endpoints.
 """
 
 from __future__ import annotations
@@ -7,12 +7,11 @@ from __future__ import annotations
 import platform
 import socket
 import sys
-import time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from api.schemas import HealthResponse, ModuleSwitchRequest, SystemInfo
+from api.schemas import HealthResponse, SystemInfo
 from engine.state import STATE
 
 try:
@@ -60,18 +59,8 @@ async def health() -> HealthResponse:
         ram_percent=ram,
         temperature_c=_read_temperature(),
         uptime_seconds=int(snap["uptime_seconds"]),
-        active_module=snap["active_module"],
         fps=float(snap["fps"]),
     )
-
-
-@router.post("/module")
-async def switch_module(req: ModuleSwitchRequest) -> dict:
-    try:
-        STATE.set_module(req.module)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"active_module": STATE.active_module}
 
 
 @router.get("/info", response_model=SystemInfo)

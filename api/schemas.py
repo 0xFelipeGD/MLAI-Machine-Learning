@@ -1,17 +1,15 @@
 """
 api/schemas.py — Pydantic v2 request/response models.
 
-Mirrors the REST and WebSocket protocol described in INSTRUCTIONS.md §9.
+AGRO-only: fruit detection + quality grading.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-Module = Literal["INDUST", "AGRO"]
 Verdict = Literal["PASS", "FAIL", "WARN"]
 
 
@@ -22,13 +20,8 @@ class HealthResponse(BaseModel):
     ram_percent: float
     temperature_c: Optional[float] = None
     uptime_seconds: int
-    active_module: Module
     fps: float = 0.0
     version: str = "1.0.0"
-
-
-class ModuleSwitchRequest(BaseModel):
-    module: Module
 
 
 class SystemInfo(BaseModel):
@@ -51,49 +44,6 @@ class CameraConfigResponse(BaseModel):
 class CalibrationStartResponse(BaseModel):
     started: bool
     message: str
-
-
-# ----------------------------------------------------------------- INDUST
-class IndustCategoryInfo(BaseModel):
-    name: str
-    threshold: float
-    description: Optional[str] = None
-    has_model: bool
-
-
-class IndustStatus(BaseModel):
-    running: bool
-    active_category: str
-    threshold: float
-    last_result: Optional["IndustResultModel"] = None
-
-
-class IndustResultModel(BaseModel):
-    id: Optional[int] = None
-    timestamp: str
-    category: str
-    anomaly_score: float
-    verdict: Verdict
-    threshold_used: float
-    inference_ms: int
-    defect_type: Optional[str] = None
-    width_mm: Optional[float] = None
-    height_mm: Optional[float] = None
-    area_mm2: Optional[float] = None
-    frame_path: Optional[str] = None
-    heatmap_path: Optional[str] = None
-
-
-class IndustHistoryPage(BaseModel):
-    items: List[IndustResultModel]
-    total: int
-    limit: int
-    offset: int
-
-
-class IndustConfigUpdate(BaseModel):
-    category: Optional[str] = None
-    threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
 # ------------------------------------------------------------------ AGRO
@@ -154,20 +104,9 @@ class AgroStats(BaseModel):
 # ------------------------------------------------------------------ WS
 class WSFrameMessage(BaseModel):
     type: Literal["frame"] = "frame"
-    module: Module
     frame_b64: str
     fps: float
     timestamp: str
-
-
-class WSIndustResultMessage(BaseModel):
-    type: Literal["indust_result"] = "indust_result"
-    verdict: Verdict
-    anomaly_score: float
-    heatmap_b64: Optional[str] = None
-    measurements: Optional[dict] = None
-    defect_type: Optional[str] = None
-    inference_ms: int
 
 
 class WSAgroResultMessage(BaseModel):
@@ -180,6 +119,3 @@ class WSAgroResultMessage(BaseModel):
 class WSCommandMessage(BaseModel):
     type: Literal["command"] = "command"
     action: Literal["pause", "resume", "capture"]
-
-
-IndustStatus.model_rebuild()

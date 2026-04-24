@@ -23,11 +23,13 @@ agro:
     - banana
     - orange
 
-  # Quality classifier output classes
+  # Quality classifier output classes.
+  # Fallback only — the authoritative order is read from
+  # models/agro/fruit_quality.labels.txt (written by train_quality.py).
+  # Keep this list in sync with that file as a safety net.
   quality_classes:
-    - good
     - defective
-    - unripe
+    - good
 
   # Reference object used for px → mm fallback when no calibration is loaded
   calibration:

@@ -1,4 +1,4 @@
-"""tests/test_api.py — Smoke tests for FastAPI endpoints."""
+"""tests/test_api.py — Smoke tests for FastAPI endpoints (AGRO-only)."""
 
 from __future__ import annotations
 
@@ -34,33 +34,14 @@ def test_health(client) -> None:
     r = client.get("/api/system/health")
     assert r.status_code == 200
     body = r.json()
-    assert "active_module" in body
-    assert body["active_module"] in ("INDUST", "AGRO")
-
-
-def test_module_switch(client) -> None:
-    r = client.post("/api/system/module", json={"module": "AGRO"})
-    assert r.status_code == 200
-    assert r.json()["active_module"] == "AGRO"
-    client.post("/api/system/module", json={"module": "INDUST"})
-
-
-def test_indust_history_empty(client) -> None:
-    r = client.get("/api/indust/history?limit=10")
-    assert r.status_code == 200
-    assert "items" in r.json()
+    assert body["status"] == "ok"
+    assert "fps" in body
 
 
 def test_agro_history_empty(client) -> None:
     r = client.get("/api/agro/history?limit=10")
     assert r.status_code == 200
     assert "items" in r.json()
-
-
-def test_indust_categories(client) -> None:
-    r = client.get("/api/indust/categories")
-    assert r.status_code == 200
-    assert isinstance(r.json(), list)
 
 
 def test_agro_stats(client) -> None:

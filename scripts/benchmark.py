@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-scripts/benchmark.py — Measure inference latency on the Pi.
+scripts/benchmark.py — Measure AGRO inference latency on the Pi.
 
-Loads each pipeline and runs N iterations on a synthetic frame, then
+Loads the AGRO pipeline and runs N iterations on a synthetic frame, then
 reports avg / p50 / p95 / p99 latency and equivalent FPS.
 
-    python scripts/benchmark.py --module both --iterations 100
+    python scripts/benchmark.py --iterations 100
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import numpy as np  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--module", choices=["indust", "agro", "both"], default="both")
     p.add_argument("--iterations", type=int, default=100)
     p.add_argument("--warmup", type=int, default=5)
     return p.parse_args()
@@ -70,21 +69,12 @@ def main() -> int:
     rng = np.random.default_rng(42)
     frame = rng.integers(0, 255, size=(480, 640, 3), dtype=np.uint8)
 
-    if args.module in ("indust", "both"):
-        from engine.indust.pipeline import IndustPipeline
-        ip = IndustPipeline()
-        ip.save_frames = False
-        ip.save_heatmaps = False
-        stats = bench_pipeline("INDUST", ip, frame, args.iterations, args.warmup)
-        print(f"  {stats}")
-
-    if args.module in ("agro", "both"):
-        from engine.agro.pipeline import AgroPipeline
-        ap = AgroPipeline()
-        ap.save_frames = False
-        ap.save_annotated = False
-        stats = bench_pipeline("AGRO", ap, frame, args.iterations, args.warmup)
-        print(f"  {stats}")
+    from engine.agro.pipeline import AgroPipeline
+    ap = AgroPipeline()
+    ap.save_frames = False
+    ap.save_annotated = False
+    stats = bench_pipeline("AGRO", ap, frame, args.iterations, args.warmup)
+    print(f"  {stats}")
 
     return 0
 

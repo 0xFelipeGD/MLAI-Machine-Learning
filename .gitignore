@@ -28,7 +28,6 @@ yarn-error.log*
 .pnp.*
 
 # ML models (large) — produced by training/ on a PC, copied to the Pi
-models/indust/*.tflite
 models/agro/*.tflite
 models/**/*.onnx
 models/**/*.h5
@@ -44,10 +43,11 @@ datasets/
 *.tar.gz
 
 # Runtime data
-data/mlai.db
-data/mlai.db-journal
-data/captures/*
-!data/captures/.gitkeep
+data/*.db
+data/*.db-journal
+data/captures/**
+!data/captures/agro/
+!data/captures/agro/.gitkeep
 
 # OS / IDE
 .DS_Store
@@ -66,3 +66,6 @@ config/camera_calibration.json
 .env.local
 *.pem
 *.key
+
+# Personal study material (local only)
+estudos/

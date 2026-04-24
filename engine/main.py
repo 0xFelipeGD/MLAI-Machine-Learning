@@ -1,9 +1,9 @@
 """
 engine/main.py — MLAI inference engine entry point.
 
-Runs the camera, dispatches each frame to the active module's pipeline,
-persists the result to SQLite, and updates the shared EngineState that
-the API serves to clients.
+Runs the camera, dispatches each frame to the AGRO pipeline, persists the
+result to SQLite, and updates the shared EngineState that the API serves
+to clients.
 
 Run from project root:
     python -m engine.main
@@ -12,22 +12,29 @@ Run from project root:
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import signal
 import time
 from typing import Optional
 
+import cv2
 import yaml
 
 from engine import PROJECT_ROOT
-from engine.camera import CameraService
-from engine.db import init_db, insert_agro_result, insert_indust_result, prune_old
-from engine.indust.heatmap import encode_b64
-from engine.indust.pipeline import IndustPipeline
 from engine.agro.pipeline import AgroPipeline
+from engine.camera import CameraService
+from engine.db import init_db, insert_agro_result, prune_old
 from engine.state import STATE
 
 logger = logging.getLogger(__name__)
+
+
+def _encode_jpeg_b64(img) -> str:
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    if not ok:
+        return ""
+    return base64.b64encode(buf.tobytes()).decode("ascii")
 
 
 class Engine:
@@ -40,20 +47,13 @@ class Engine:
         self.prune_days = int((self.cfg.get("storage") or {}).get("prune_after_days", 30))
 
         self.camera = CameraService()
-        self.indust: Optional[IndustPipeline] = None
         self.agro: Optional[AgroPipeline] = None
         self._stop = asyncio.Event()
         init_db()
 
-    # --------------------------------------------------------------- start
     def start(self) -> None:
-        logger.info("Starting MLAI engine — default module=%s", STATE.active_module)
+        logger.info("Starting MLAI engine (AGRO)")
         self.camera.start()
-        # Lazy-load pipelines so a missing model in one module doesn't stop the other.
-        try:
-            self.indust = IndustPipeline(num_threads=self.num_threads)
-        except Exception:
-            logger.exception("Failed to construct INDUST pipeline")
         try:
             self.agro = AgroPipeline(num_threads=self.num_threads)
         except Exception:
@@ -63,10 +63,6 @@ class Engine:
         self.camera.stop()
         self._stop.set()
 
-    def switch_module(self, module: str) -> None:
-        STATE.set_module(module)
-
-    # ---------------------------------------------------------------- loop
     async def run(self) -> None:
         period = 1.0 / max(self.fps_target, 1)
         last_prune = time.time()
@@ -79,20 +75,14 @@ class Engine:
             try:
                 if STATE.paused:
                     pass
-                elif STATE.active_module == "INDUST" and self.indust is not None:
-                    result, overlay = self.indust.process(frame)
-                    insert_indust_result(result.to_dict())
-                    STATE.update_indust(result.to_dict())
-                    STATE.update_frame(encode_b64(overlay), self.camera.get_fps())
-                elif STATE.active_module == "AGRO" and self.agro is not None:
+                elif self.agro is not None:
                     result, annotated = self.agro.process(frame)
                     insert_agro_result(result.to_dict())
                     STATE.update_agro(result.to_dict())
-                    STATE.update_frame(encode_b64(annotated), self.camera.get_fps())
+                    STATE.update_frame(_encode_jpeg_b64(annotated), self.camera.get_fps())
             except Exception:
                 logger.exception("frame processing failed")
 
-            # Periodic prune (once an hour)
             if time.time() - last_prune > 3600:
                 try:
                     n = prune_old(self.prune_days)

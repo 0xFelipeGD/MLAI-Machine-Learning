@@ -1,15 +1,14 @@
 """
-engine/db.py — SQLite persistence layer.
+engine/db.py — SQLite persistence layer (AGRO-only).
 
-Implements the schema in INSTRUCTIONS.md §11. Uses the standard library
-sqlite3 (no ORM dependency). All functions are thread-safe via a single
+Uses the standard library sqlite3 (no ORM). Thread-safe via a single
 shared connection guarded by a lock.
 
 Quick start:
 
-    from engine.db import init_db, insert_indust_result
+    from engine.db import init_db, insert_agro_result
     init_db()                          # creates the file + tables on first call
-    insert_indust_result(result_dict)  # save a dict-shaped IndustResult
+    insert_agro_result(result_dict)    # save a dict-shaped AgroResult
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -39,26 +38,6 @@ CREATE TABLE IF NOT EXISTS system_state (
     value TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TABLE IF NOT EXISTS indust_results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    category TEXT NOT NULL,
-    anomaly_score REAL NOT NULL,
-    verdict TEXT NOT NULL,
-    defect_type TEXT,
-    width_mm REAL,
-    height_mm REAL,
-    area_mm2 REAL,
-    threshold_used REAL NOT NULL,
-    inference_ms INTEGER,
-    frame_path TEXT,
-    heatmap_path TEXT,
-    notes TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_indust_timestamp ON indust_results(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_indust_verdict ON indust_results(verdict);
-CREATE INDEX IF NOT EXISTS idx_indust_category ON indust_results(category);
 
 CREATE TABLE IF NOT EXISTS agro_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,81 +114,6 @@ def transaction():
         except Exception:
             conn.execute("ROLLBACK")
             raise
-
-
-# ----------------------------------------------------------------- INDUST ops
-def insert_indust_result(r: dict) -> int:
-    sql = """
-    INSERT INTO indust_results
-        (timestamp, category, anomaly_score, verdict, defect_type,
-         width_mm, height_mm, area_mm2, threshold_used, inference_ms,
-         frame_path, heatmap_path, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """
-    with _LOCK:
-        cur = get_conn().execute(
-            sql,
-            (
-                r.get("timestamp"),
-                r["category"],
-                float(r["anomaly_score"]),
-                r["verdict"],
-                r.get("defect_type"),
-                r.get("width_mm"),
-                r.get("height_mm"),
-                r.get("area_mm2"),
-                float(r["threshold_used"]),
-                int(r.get("inference_ms") or 0),
-                r.get("frame_path"),
-                r.get("heatmap_path"),
-                r.get("notes"),
-            ),
-        )
-        return int(cur.lastrowid)
-
-
-def list_indust(
-    *,
-    limit: int = 50,
-    offset: int = 0,
-    verdict: Optional[str] = None,
-    category: Optional[str] = None,
-) -> list[dict]:
-    where = []
-    params: list[Any] = []
-    if verdict:
-        where.append("verdict = ?")
-        params.append(verdict)
-    if category:
-        where.append("category = ?")
-        params.append(category)
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
-    sql = f"SELECT * FROM indust_results {where_sql} ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-    params.extend([int(limit), int(offset)])
-    with _LOCK:
-        rows = get_conn().execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
-
-
-def count_indust(verdict: Optional[str] = None, category: Optional[str] = None) -> int:
-    where = []
-    params: list[Any] = []
-    if verdict:
-        where.append("verdict = ?")
-        params.append(verdict)
-    if category:
-        where.append("category = ?")
-        params.append(category)
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
-    with _LOCK:
-        row = get_conn().execute(f"SELECT COUNT(*) FROM indust_results {where_sql}", params).fetchone()
-    return int(row[0])
-
-
-def get_indust_by_id(item_id: int) -> Optional[dict]:
-    with _LOCK:
-        row = get_conn().execute("SELECT * FROM indust_results WHERE id = ?", (int(item_id),)).fetchone()
-    return dict(row) if row else None
 
 
 # ------------------------------------------------------------------- AGRO ops
@@ -325,14 +229,10 @@ def prune_old(days: int) -> int:
         return 0
     with _LOCK:
         cur = get_conn().execute(
-            "DELETE FROM indust_results WHERE timestamp < datetime('now', ?)", (f"-{int(days)} days",)
-        )
-        deleted_indust = cur.rowcount
-        cur = get_conn().execute(
             "DELETE FROM agro_results WHERE timestamp < datetime('now', ?)", (f"-{int(days)} days",)
         )
-        deleted_agro = cur.rowcount
-    return int((deleted_indust or 0) + (deleted_agro or 0))
+        deleted = cur.rowcount
+    return int(deleted or 0)
 
 
 # ----------------------------------------------------------- system_state ops

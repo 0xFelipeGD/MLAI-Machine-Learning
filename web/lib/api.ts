@@ -6,10 +6,6 @@ import type {
   AgroStatus,
   CameraConfig,
   HealthResponse,
-  IndustCategory,
-  IndustHistoryPage,
-  IndustStatus,
-  Module,
 } from "./types";
 
 async function get<T>(url: string): Promise<T> {
@@ -31,20 +27,9 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 export const api = {
   // System
   health: () => get<HealthResponse>("/api/system/health"),
-  setModule: (module: Module) => post<{ active_module: Module }>("/api/system/module", { module }),
 
   // Camera
   cameraConfig: () => get<CameraConfig>("/api/camera/config"),
-
-  // INDUST
-  indust: {
-    status: () => get<IndustStatus>("/api/indust/status"),
-    history: (limit = 50, offset = 0) =>
-      get<IndustHistoryPage>(`/api/indust/history?limit=${limit}&offset=${offset}`),
-    categories: () => get<IndustCategory[]>("/api/indust/categories"),
-    config: (body: { category?: string; threshold?: number }) =>
-      post<IndustStatus>("/api/indust/config", body),
-  },
 
   // AGRO
   agro: {

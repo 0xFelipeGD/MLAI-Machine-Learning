@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="MLAI API",
         version="1.0.0",
-        description="REST + WebSocket API for the MLAI dual-purpose inspection system.",
+        description="REST + WebSocket API for the MLAI fruit inspection system.",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -67,13 +67,11 @@ def create_app() -> FastAPI:
     # Routers
     from api.routes import system as system_routes
     from api.routes import camera as camera_routes
-    from api.routes import indust as indust_routes
     from api.routes import agro as agro_routes
     from api.routes import ws as ws_routes
 
     app.include_router(system_routes.router)
     app.include_router(camera_routes.router)
-    app.include_router(indust_routes.router)
     app.include_router(agro_routes.router)
     app.include_router(ws_routes.router)
 

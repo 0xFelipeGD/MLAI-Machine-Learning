@@ -27,7 +27,7 @@ cd ..
 
 ## Running Locally (PC, no Pi required)
 
-The engine and pipelines fall back to **mock mode** when no TFLite model files or camera are present, so you can run the entire stack on a regular development machine:
+The engine and pipeline fall back to **mock mode** when no TFLite model files or camera are present, so you can run the entire stack on a regular development machine:
 
 ```bash
 # Terminal A — engine
@@ -61,15 +61,7 @@ cd web && npm run type-check
 - [ ] `pytest` passes
 - [ ] `npm run type-check` passes
 - [ ] No new dependencies added without discussion
-- [ ] CHANGELOG entry added (if user-visible change)
-- [ ] Did not introduce a generic-AI look in the UI
 - [ ] Touched ML code? Confirm a beginner could read it
-
-## Module Boundaries
-
-INDUST and AGRO are intentionally **separate** modules. Do not merge them or share code between `engine/indust/` and `engine/agro/` beyond what already lives in `engine/` (camera, preprocessor, calibration, measurement, db).
-
-The same applies to API routes (`api/routes/indust.py` vs `api/routes/agro.py`) and frontend components (`components/indust/` vs `components/agro/`).
 
 ## Reporting Issues
 

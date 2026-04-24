@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { connectLive } from "@/lib/ws";
-import type { Module, WSMessage } from "@/lib/types";
+import type { WSMessage } from "@/lib/types";
 
 interface Props {
-  module?: Module;
   onResult?: (msg: WSMessage) => void;
 }
 
-export function LiveFeed({ module, onResult }: Props) {
+export function LiveFeed({ onResult }: Props) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [connected, setConnected] = useState(false);
   const [fps, setFps] = useState(0);
@@ -20,7 +19,6 @@ export function LiveFeed({ module, onResult }: Props) {
     const dispose = connectLive(
       (msg) => {
         if (msg.type === "frame") {
-          if (module && msg.module !== module) return;
           if (imgRef.current) imgRef.current.src = `data:image/jpeg;base64,${msg.frame_b64}`;
           setFps(msg.fps);
           setStamp(msg.timestamp.replace("T", " ").slice(0, 19) + "Z");
@@ -30,7 +28,7 @@ export function LiveFeed({ module, onResult }: Props) {
       (open) => setConnected(open)
     );
     return dispose;
-  }, [module, onResult]);
+  }, [onResult]);
 
   return (
     <div className="panel relative overflow-hidden">
@@ -43,7 +41,6 @@ export function LiveFeed({ module, onResult }: Props) {
             )}
           />
           <span className="label">{connected ? "LIVE" : "OFFLINE"}</span>
-          {module && <span className="value text-[11px] text-[var(--color-text-dim)]">/ {module}</span>}
         </div>
         <div className="flex items-center gap-3">
           <span className="value text-[11px] text-[var(--color-text-dim)]">{stamp}</span>

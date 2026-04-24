@@ -26,7 +26,7 @@ PC          SSH tunnel + open browser      →  §6
 
 **Software on your PC**
 - [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
-- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) — only if you plan to train your own models
+- Python 3.11+ — only if you plan to train your own models
 
 ---
 
@@ -81,7 +81,7 @@ The wizard runs 8 steps and prompts before anything destructive:
 2. Installs Node.js 22
 3. Stops anything that could conflict (old MLAI services, camera holders, port 8000/3000 listeners)
 4. `pip install -r requirements.txt`
-5. Creates `models/indust/` and `models/agro/`
+5. Creates `models/agro/`
 6. Probes the camera (`rpicam-hello --list-cameras`)
 7. Builds the Next.js dashboard
 8. Installs and starts the three systemd services
@@ -143,10 +143,7 @@ This happens **on your PC**, not the Pi. See [`training/README.md`](training/REA
 # On your PC
 cd MLAI-Machine-Learning
 python3 -m venv .venv-train && source .venv-train/bin/activate
-pip install "tensorflow==2.18.*" opencv-python pillow numpy tqdm requests
-
-# INDUST — anomaly detection (autoencoder on a MVTec category)
-python training/indust/train_autoencoder.py
+pip install -r training/requirements.txt
 
 # AGRO detector — pretrained COCO SSD MobileNet V1 (download, no training)
 cd models/agro
@@ -242,11 +239,22 @@ pip3 install -r requirements.txt --break-system-packages
 
 `--break-system-packages` is required by PEP 668 on Raspberry Pi OS. We install into the system Python on purpose — `picamera2` ships as a system package (`python3-picamera2`) and is not on PyPI, so the engine has to run under the same interpreter.
 
-**5. Model directories**
+**5. Models**
+
+Fetches the trained `.tflite` models + label files from a GitHub Release
+into `models/agro/`. The default tag is baked into the script (`DEFAULT_TAG`);
+override with an env var or positional arg if you want a different version:
 
 ```bash
-bash scripts/download_models.sh
+bash scripts/download_models.sh                       # default tag
+MLAI_MODELS_TAG=v1.2.0 bash scripts/download_models.sh
+bash scripts/download_models.sh v1.2.0                # same, positional
 ```
+
+The release is created from your training PC after a successful retrain — see
+[`training/README.md`](training/README.md) §6 for how to publish one. If the
+release assets are missing the engine falls back to MOCK MODE, which keeps the
+camera/API/dashboard usable but returns dummy predictions.
 
 **6. Frontend build**
 
@@ -278,9 +286,7 @@ sudo systemctl status mlai-engine mlai-api mlai-web
 | **journalctl** | Command to view logs from systemd services |
 | **Inference** | Running a trained model on new data |
 | **TFLite / LiteRT** | Compact ML file format optimised for small devices like the Pi |
-| **PaDiM** | Anomaly-detection algorithm we use for INDUST |
 | **SSD MobileNet** | Small, fast object detector we use for AGRO |
-| **MVTec AD** | Famous open dataset of industrial parts with defects |
 | **Calibration** | Teaching the camera its lens properties so we can measure things |
 | **WebSocket** | A two-way real-time connection between the dashboard and the Pi |
 | **NoIR camera** | A Pi camera with the infrared filter removed |
