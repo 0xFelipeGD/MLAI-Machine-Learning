@@ -140,30 +140,45 @@ info "Using --break-system-packages because picamera2 ships as a system package"
 pip3 install -r requirements.txt --break-system-packages
 ok "Python dependencies installed"
 
-# ------------------------------------------------------- step: model dirs
-step "Step 5/8 — Preparing model directories"
-bash "$REPO_ROOT/scripts/download_models.sh" >/dev/null
-ok "models/agro created"
+# ---------------------------------------------------------- step: models
+step "Step 5/8 — Downloading trained models from GitHub Releases"
+if bash "$REPO_ROOT/scripts/download_models.sh"; then
+    ok "models downloaded into models/agro"
+else
+    warn "Model download failed. Engine will start in MOCK MODE until models are present."
+    info "Set MLAI_MODELS_TAG to a valid release tag and re-run this wizard."
+    info "See training/README.md §5 for how to publish a release."
+fi
 
 AGRO_MODELS=$(find "$REPO_ROOT/models/agro" -maxdepth 1 -name '*.tflite' 2>/dev/null | wc -l)
-if (( AGRO_MODELS == 0 )); then
-    warn "No .tflite files found yet. Engine will run in MOCK MODE until you scp them from your PC."
-    info "See SetupGuide.md §7 / training/README.md."
-else
+if (( AGRO_MODELS > 0 )); then
     ok "Found ${AGRO_MODELS} AGRO model file(s)"
 fi
 
 # ---------------------------------------------------------- step: camera
 step "Step 6/8 — Verifying camera"
+
+# Low-level probe: is a camera wired up at all?
 if command -v "$CAMERA_CMD" >/dev/null 2>&1; then
     if "$CAMERA_CMD" --list-cameras 2>&1 | grep -qi "camera\|index"; then
-        ok "Camera detected ($CAMERA_CMD --list-cameras succeeded)"
+        ok "Camera detected ($CAMERA_CMD --list-cameras)"
     else
         warn "$CAMERA_CMD ran but no camera was listed. Check the ribbon cable and 'sudo raspi-config' → Interface → Camera."
     fi
 else
-    warn "$CAMERA_CMD not found — skipping camera probe"
+    warn "$CAMERA_CMD not found — skipping low-level probe"
 fi
+
+# End-to-end check: can we actually capture frames through CameraService?
+info "Running scripts/test_camera.py (30-frame capture, may take a few seconds)"
+CAM_TMP=$(mktemp -d)
+if (cd "$CAM_TMP" && python3 "$REPO_ROOT/scripts/test_camera.py" >/tmp/mlai-camtest.log 2>&1); then
+    fps=$(grep -oE 'Effective FPS: [0-9.]+' /tmp/mlai-camtest.log | tail -1 || true)
+    ok "End-to-end capture ok${fps:+ (${fps})}"
+else
+    warn "test_camera.py failed — see /tmp/mlai-camtest.log for details"
+fi
+rm -rf "$CAM_TMP"
 
 # --------------------------------------------------- step: frontend build
 step "Step 7/8 — Building the Next.js dashboard (this takes ~1–3 min)"
@@ -218,9 +233,21 @@ Next steps:
 
         journalctl -u mlai-engine -u mlai-api -u mlai-web -n 100 --no-pager
 
-  4. Missing .tflite files? Train them on your PC (training/README.md) and:
+  4. Calibrate the camera (optional but recommended for accurate mm readings):
 
-        scp models/agro/*.tflite felipe@mlai.local:~/MLAI-Machine-Learning/models/agro/
-        ssh felipe@mlai.local "sudo systemctl restart mlai-engine"
+        python3 scripts/calibrate_camera.py --pattern 9x6 --square 25
+
+  5. Updated or retrained models? Publish a new release from your PC:
+
+        gh release create vX.Y.Z \\
+            models/agro/fruit_detector.tflite \\
+            models/agro/fruit_detector.labels.txt \\
+            models/agro/fruit_quality.tflite \\
+            models/agro/fruit_quality.labels.txt
+
+     Then on the Pi pull and restart:
+
+        MLAI_MODELS_TAG=vX.Y.Z bash scripts/download_models.sh
+        sudo systemctl restart mlai-engine
 
 EOF
