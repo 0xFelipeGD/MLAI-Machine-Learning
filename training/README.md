@@ -475,7 +475,7 @@ Then on the Pi:
 
 ```bash
 MLAI_MODELS_TAG=v1.0.0 bash scripts/download_models.sh
-sudo systemctl restart mlai-engine
+sudo systemctl restart mlai-api
 ```
 
 If `DEFAULT_TAG` inside `scripts/download_models.sh` already points at the tag you just published, the env var is optional.
@@ -487,7 +487,7 @@ Faster if you're iterating and don't want to make a release for every try:
 ```bash
 scp models/agro/*.tflite models/agro/*.labels.txt \
     pi@<pi-ip>:~/MLAI-Machine-Learning/models/agro/
-ssh pi@<pi-ip> "sudo systemctl restart mlai-engine"
+ssh pi@<pi-ip> "sudo systemctl restart mlai-api"
 ```
 
 Replace `<pi-ip>` with your Pi's IP. This bypasses the release mechanism, so a fresh reinstall later will pull whatever `DEFAULT_TAG` points to — not your local scratch build.

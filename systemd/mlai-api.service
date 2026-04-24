@@ -1,6 +1,6 @@
 [Unit]
-Description=MLAI REST + WebSocket API
-After=network-online.target mlai-engine.service
+Description=MLAI REST + WebSocket API + Inference Engine
+After=network-online.target
 Wants=network-online.target
 
 [Service]

@@ -44,10 +44,6 @@ api:
 web:
   port: 3000
 
-ipc:
-  # Unix socket used by api/ to receive frames from engine/.
-  socket_path: /tmp/mlai-frames.sock
-
 mqtt:
   # Future expansion for remote monitoring.
   enabled: false

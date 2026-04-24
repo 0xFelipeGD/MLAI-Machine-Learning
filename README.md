@@ -59,7 +59,7 @@ Everything runs locally — **no cloud, no internet, no telemetry**. Inference h
 - SQLite history of every inspection
 - WebSocket live stream + REST API
 - SCADA-style web dashboard accessible from any LAN browser
-- Runs as three systemd services that auto-restart on crash
+- Runs as two systemd services that auto-restart on crash (API+engine + web dashboard)
 - SSD MobileNet V1 fruit detection (apple, banana, orange — extendable)
 - Per-fruit quality classification (good / defective)
 - Diameter estimation from contours
@@ -166,7 +166,7 @@ The wizard runs 8 steps and prompts before anything destructive:
 5. Downloads trained models from the GitHub Release
 6. End-to-end camera probe (`rpicam-hello` + `scripts/test_camera.py`)
 7. Builds the Next.js dashboard
-8. Installs and starts the three systemd services
+8. Installs and starts the two systemd services (api+engine and web)
 
 Pass `--yes` for a fully non-interactive run:
 
@@ -184,7 +184,7 @@ Models (`.tflite` / `.labels.txt`) aren't in the repo — they're large and user
 
 ```bash
 MLAI_MODELS_TAG=v1.0.0 bash scripts/download_models.sh
-sudo systemctl restart mlai-engine
+sudo systemctl restart mlai-api
 ```
 
 If the release or any asset is missing, the engine falls back to **mock mode** (fake but plausible predictions) so the camera / API / dashboard still work for development.
@@ -345,7 +345,7 @@ Run `python scripts/benchmark.py` on the Pi to measure your own setup.
 | Symptom | Fix |
 |---------|-----|
 | Browser shows nothing | `journalctl -u mlai-web -n 50` |
-| Live feed black | `journalctl -u mlai-engine -n 50`; check camera ribbon |
+| Live feed black | `journalctl -u mlai-api -n 50`; check camera ribbon |
 | Dashboard says "Offline" | `sudo systemctl restart mlai-api` |
 | `ModuleNotFoundError: picamera2` | Wizard wasn't run — `python3 -c "import picamera2"` |
 | `ai_edge_litert` / `tflite_runtime` missing | Wizard wasn't run — `pip3 install -r requirements.txt --break-system-packages` |
@@ -356,8 +356,8 @@ Run `python scripts/benchmark.py` on the Pi to measure your own setup.
 Full diagnostic dump:
 
 ```bash
-sudo systemctl status mlai-engine mlai-api mlai-web
-journalctl -u mlai-engine -u mlai-api -u mlai-web -n 100 --no-pager
+sudo systemctl status mlai-api mlai-web
+journalctl -u mlai-api -u mlai-web -n 100 --no-pager
 ```
 
 ---
@@ -385,8 +385,13 @@ sudo apt install -y nodejs
 **3. Stop anything that could conflict** — before re-running setup or installing services, free the camera and ports:
 
 ```bash
-sudo systemctl stop    mlai-engine mlai-api mlai-web 2>/dev/null || true
-sudo systemctl disable mlai-engine mlai-api mlai-web 2>/dev/null || true
+sudo systemctl stop    mlai-api mlai-web 2>/dev/null || true
+sudo systemctl disable mlai-api mlai-web 2>/dev/null || true
+# Legacy cleanup — the old mlai-engine.service was merged into mlai-api.service.
+sudo systemctl stop    mlai-engine 2>/dev/null || true
+sudo systemctl disable mlai-engine 2>/dev/null || true
+sudo rm -f /etc/systemd/system/mlai-engine.service
+sudo systemctl daemon-reload
 sudo fuser -k /dev/video* /dev/media* 2>/dev/null || true
 sudo fuser -k 8000/tcp 3000/tcp 2>/dev/null || true
 pkill -f "python.*engine" 2>/dev/null || true
@@ -428,8 +433,8 @@ cd ..
 ```bash
 sudo cp systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now mlai-engine mlai-api mlai-web
-sudo systemctl status mlai-engine mlai-api mlai-web
+sudo systemctl enable --now mlai-api mlai-web
+sudo systemctl status mlai-api mlai-web
 ```
 
 ---

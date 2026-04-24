@@ -1,22 +1,35 @@
 """
-api/main.py — FastAPI application factory and dev server.
+api/main.py — FastAPI application factory + inference engine supervisor.
 
-For development you can run the API and engine in the same process:
+The API and the inference engine run in the SAME process: FastAPI's
+lifespan starts an Engine instance and schedules its async loop as a
+background task. The engine populates engine.state.STATE, which the
+REST routes and the /ws/live WebSocket read from directly — no IPC,
+no state divergence.
 
+Entry points:
+
+    # production (via systemd / mlai-api.service):
+    uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+    # dev (single command with auto-reload disabled by default):
     python -m api.main
 
-For production each service is its own systemd unit; the API still imports
-engine.state.STATE, but in production the engine writes its updates via
-that singleton because both run inside the same process supervised by
-mlai-engine.service.
+Engine startup is best-effort: if the camera or TFLite models are
+unavailable (e.g. running on a dev PC or in CI), the engine is skipped
+and the API still serves without live data. Set MLAI_NO_ENGINE=1 to
+force-skip engine startup (used by pytest).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from fastapi import FastAPI
@@ -40,9 +53,46 @@ def _load_config() -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+
+    engine = None
+    task: Optional[asyncio.Task] = None
+
+    # Skip the engine under pytest (no camera, no TFLite) or when explicitly
+    # disabled. Keep this import INSIDE the function so test collection
+    # doesn't pay the cost of importing the engine stack.
+    if os.environ.get("MLAI_NO_ENGINE"):
+        logger.info("MLAI_NO_ENGINE set — skipping inference engine startup")
+    else:
+        try:
+            from engine.main import Engine
+
+            engine = Engine()
+            engine.start()
+            task = asyncio.create_task(engine.run(), name="mlai-engine")
+            logger.info("Inference engine task started")
+        except Exception:
+            # Graceful degradation: the API is still useful (health, config
+            # editing, history queries) even when the engine can't run.
+            logger.exception("Engine failed to start — API running without live data")
+            engine = None
+            task = None
+
     logger.info("API startup complete")
-    yield
-    logger.info("API shutdown")
+    try:
+        yield
+    finally:
+        if engine is not None:
+            logger.info("Stopping inference engine")
+            engine.stop()
+        if task is not None:
+            try:
+                await asyncio.wait_for(task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Engine task didn't exit in 5s; cancelling")
+                task.cancel()
+            except Exception:
+                logger.exception("Engine task raised during shutdown")
+        logger.info("API shutdown")
 
 
 def create_app() -> FastAPI:

@@ -70,4 +70,4 @@ Open a GitHub issue with:
 - OS version
 - `pip freeze` output
 - Steps to reproduce
-- Logs from `journalctl -u mlai-engine -u mlai-api -u mlai-web`
+- Logs from `journalctl -u mlai-api -u mlai-web`

@@ -112,8 +112,16 @@ fi
 # ----------------------------------------- step: stop any conflicting runs
 step "Step 3/8 — Stopping anything that could conflict"
 
-sudo systemctl stop    mlai-engine mlai-api mlai-web 2>/dev/null || true
-sudo systemctl disable mlai-engine mlai-api mlai-web 2>/dev/null || true
+sudo systemctl stop    mlai-api mlai-web 2>/dev/null || true
+sudo systemctl disable mlai-api mlai-web 2>/dev/null || true
+# Legacy: disable and remove the old mlai-engine.service from pre-refactor installs.
+if systemctl list-unit-files 2>/dev/null | grep -q "^mlai-engine.service"; then
+    sudo systemctl stop    mlai-engine 2>/dev/null || true
+    sudo systemctl disable mlai-engine 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/mlai-engine.service
+    sudo systemctl daemon-reload
+    info "Removed legacy mlai-engine.service (engine now runs inside mlai-api)"
+fi
 info "systemd units stopped (if they were running)"
 
 # Release the camera
@@ -197,15 +205,15 @@ fi
 
 # ---------------------------------------------- step: install & start services
 step "Step 8/8 — Installing and starting systemd services"
-if confirm "Install systemd units (mlai-engine, mlai-api, mlai-web) and enable on boot?"; then
+if confirm "Install systemd units (mlai-api, mlai-web) and enable on boot?"; then
     sudo cp "$REPO_ROOT"/systemd/*.service /etc/systemd/system/
     sudo systemctl daemon-reload
-    sudo systemctl enable --now mlai-engine mlai-api mlai-web
+    sudo systemctl enable --now mlai-api mlai-web
     sleep 2
 
     echo
     info "Service status:"
-    for svc in mlai-engine mlai-api mlai-web; do
+    for svc in mlai-api mlai-web; do
         state=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
         if [[ "$state" == "active" ]]; then
             echo "    ${C_GREEN}✔${C_RESET} $svc  — $state"
@@ -214,7 +222,7 @@ if confirm "Install systemd units (mlai-engine, mlai-api, mlai-web) and enable o
         fi
     done
 else
-    warn "Skipped — start later with: sudo systemctl enable --now mlai-engine mlai-api mlai-web"
+    warn "Skipped — start later with: sudo systemctl enable --now mlai-api mlai-web"
 fi
 
 # ------------------------------------------------------------------ summary
@@ -237,7 +245,7 @@ Next steps:
 
   3. If any service is red, check its logs:
 
-        journalctl -u mlai-engine -u mlai-api -u mlai-web -n 100 --no-pager
+        journalctl -u mlai-api -u mlai-web -n 100 --no-pager
 
   4. Calibrate the camera (optional but recommended for accurate mm readings):
 
@@ -254,6 +262,6 @@ Next steps:
      Then on the Pi pull and restart:
 
         MLAI_MODELS_TAG=vX.Y.Z bash scripts/download_models.sh
-        sudo systemctl restart mlai-engine
+        sudo systemctl restart mlai-api
 
 EOF
