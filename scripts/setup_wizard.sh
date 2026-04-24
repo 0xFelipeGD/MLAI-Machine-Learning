@@ -218,16 +218,22 @@ else
 fi
 
 # ------------------------------------------------------------------ summary
+PI_IP="$(hostname -I | awk '{print $1}')"
 echo
 echo "${C_BOLD}${C_GREEN}MLAI setup finished.${C_RESET}"
 cat <<EOF
 
 Next steps:
-  1. From your PC, open an SSH tunnel to reach the dashboard:
+  1. Open the dashboard from any browser on the same network:
 
-        ssh -L 3000:localhost:3000 -L 8000:localhost:8000 felipe@mlai.local
+        http://${PI_IP}:3000
+        http://mlai.local:3000
 
-  2. Visit http://localhost:3000 in your browser.
+     (SSH tunnel also works if the network blocks LAN access:
+      ssh -L 3000:localhost:3000 felipe@mlai.local, then open
+      http://localhost:3000)
+
+  2. (Dashboard should show LIVE + frames flowing.)
 
   3. If any service is red, check its logs:
 

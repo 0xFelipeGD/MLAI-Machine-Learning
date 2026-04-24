@@ -57,9 +57,10 @@ def _result_to_model(row: dict) -> AgroResultModel:
 @router.get("/status", response_model=AgroStatus)
 async def status() -> AgroStatus:
     cfg = _load_cfg()
-    last = STATE.snapshot().get("last_agro")
+    snap = STATE.snapshot()
+    last = snap.get("last_agro")
     return AgroStatus(
-        running=STATE.active_module == "AGRO",
+        running=not snap.get("paused", False),
         fruit_classes=list(cfg.get("fruit_classes", [])),
         detection_threshold=float(cfg.get("detection_threshold", 0.5)),
         last_result=_result_to_model(last) if last else None,

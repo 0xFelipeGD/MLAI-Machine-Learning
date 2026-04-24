@@ -12,8 +12,9 @@ export function connectLive(onMessage: WSHandler, onStatus?: (open: boolean) => 
   const url = (() => {
     if (typeof window === "undefined") return "";
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE;
-    if (apiBase) return apiBase.replace(/^http/, "ws") + "/ws/live";
+    // Always same-origin: the Next.js server rewrites /ws/* to the API
+    // (see web/next.config.ts). Works for direct LAN access, SSH tunnel,
+    // or chromium on the Pi — no build-time URL baking required.
     return `${proto}://${window.location.host}/ws/live`;
   })();
 

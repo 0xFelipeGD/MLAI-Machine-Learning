@@ -83,10 +83,9 @@ bash scripts/setup_wizard.sh
 # 3. Pull trained models from the latest GitHub Release
 bash scripts/download_models.sh
 
-# 4. From your PC, open an SSH tunnel to reach the dashboard
-ssh -L 3000:localhost:3000 -L 8000:localhost:8000 felipe@mlai.local
-
-# 5. Visit http://localhost:3000 in your browser
+# 4. From any browser on your network, open the dashboard
+#    (replace with your Pi's IP or use mlai.local)
+http://192.168.x.x:3000
 ```
 
 ---
@@ -192,18 +191,31 @@ If the release or any asset is missing, the engine falls back to **mock mode** (
 
 ### 6. Open the dashboard
 
-The dashboard lives on the Pi at port 3000 and talks to the API on port 8000. The frontend is built with `NEXT_PUBLIC_API_BASE=http://localhost:8000`, so the browser has to resolve both ports to the Pi. The simplest way from your PC is an SSH tunnel:
+The Next.js server on the Pi serves the dashboard on port 3000 and proxies `/api/*` and `/ws/*` internally to the FastAPI on port 8000. The browser only ever sees port 3000 — you never need to expose both.
+
+**Simplest path — direct LAN access:**
+
+```bash
+# From any browser on the same network:
+http://<pi-ip>:3000
+# or
+http://mlai.local:3000
+```
+
+Find the Pi IP with `hostname -I` on the Pi itself, or from your router's DHCP page.
+
+**SSH tunnel (useful on restrictive networks / VPNs):**
 
 ```bash
 # On your PC — keep this terminal open while using the dashboard
-ssh -L 3000:localhost:3000 -L 8000:localhost:8000 felipe@mlai.local
+ssh -L 3000:localhost:3000 felipe@mlai.local
 ```
 
-Then open <http://localhost:3000> in your browser.
+Then open <http://localhost:3000>.
 
-> **On the Pi with a monitor attached?** Just launch Chromium on the Pi at `http://localhost:3000` — no tunnel needed.
+> **On the Pi with a monitor attached?** Just launch Chromium at `http://localhost:3000` — same URL works.
 >
-> **Direct LAN access (`http://<pi-ip>:3000`)?** Rebuild the frontend on the Pi with `NEXT_PUBLIC_API_BASE=http://<pi-ip>:8000 npm run build` inside `web/` — the URL is baked in at build time.
+> **mDNS not resolving `mlai.local`?** Use the IP directly. On Ubuntu PCs without `avahi-daemon`, install it with `sudo apt install avahi-daemon libnss-mdns` to enable `.local` resolution.
 
 ### 7. Train your own models (optional)
 
