@@ -75,17 +75,17 @@ class CameraService:
         self.source = cfg.get("source", source) or "auto"
 
         # Optional 3x3 color correction matrix applied to every captured RGB
-        # frame. NoIR (no-IR-cut-filter) Pi cameras need this to look like
-        # normal RGB — without correction, oranges look gray-blue and the
-        # COCO-trained detector misses every fruit. See system_config.yaml.
+        # frame. The right way to fix NoIR colour cast is the tuning_file
+        # below — the CCM is a fine-tuning escape hatch. Skipped entirely
+        # when the matrix is (close to) identity so we don't spend ~2ms
+        # per frame on a no-op multiply.
         ccm_raw = cfg.get("color_matrix")
         self._ccm: Optional[np.ndarray] = None
         if ccm_raw and isinstance(ccm_raw, list) and len(ccm_raw) == 3:
             try:
                 m = np.array(ccm_raw, dtype=np.float32)
-                if m.shape == (3, 3):
+                if m.shape == (3, 3) and not np.allclose(m, np.eye(3, dtype=np.float32)):
                     self._ccm = m
-
                     logger.info("Camera color matrix enabled:\n%s", m)
             except Exception:
                 logger.exception("Invalid camera.color_matrix in config; ignoring")
@@ -272,13 +272,19 @@ class CameraService:
                 logger.exception("set_controls failed (manual)")
 
     def update_color_matrix(self, matrix: list) -> None:
-        """Live update of the post-capture CCM. matrix is a 3x3 nested list."""
+        """Live update of the post-capture CCM. matrix is a 3x3 nested list.
+        Identity matrices clear the CCM entirely (skipping the per-frame
+        multiplication)."""
         try:
             m = np.array(matrix, dtype=np.float32)
             if m.shape != (3, 3):
                 raise ValueError(f"shape must be 3x3, got {m.shape}")
-            self._ccm = m
-            logger.info("Live update CCM:\n%s", m)
+            if np.allclose(m, np.eye(3, dtype=np.float32)):
+                self._ccm = None
+                logger.info("Live update CCM: identity (CCM disabled)")
+            else:
+                self._ccm = m
+                logger.info("Live update CCM:\n%s", m)
         except Exception:
             logger.exception("update_color_matrix failed")
 
