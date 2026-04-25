@@ -90,6 +90,22 @@ class CameraService:
             except Exception:
                 logger.exception("Invalid camera.color_matrix in config; ignoring")
 
+        # picamera2 controls applied at sensor level (BEFORE the CCM). Setting
+        # AwbEnable=False + manual ColourGains is essential for NoIR cameras:
+        # auto-WB tries to "balance" the IR-bias by dropping the red gain,
+        # which is why fruits end up looking blue. We override that.
+        self._picam_controls: dict = {}
+        awb_mode = (cfg.get("awb_mode") or "auto").lower()
+        if awb_mode in ("manual", "off", "disabled", "none"):
+            gains = cfg.get("colour_gains") or [2.0, 0.7]
+            try:
+                r_gain, b_gain = float(gains[0]), float(gains[1])
+                self._picam_controls["AwbEnable"] = False
+                self._picam_controls["ColourGains"] = (r_gain, b_gain)
+                logger.info("Manual ColourGains: red=%.2f blue=%.2f (AWB disabled)", r_gain, b_gain)
+            except Exception:
+                logger.exception("Invalid camera.colour_gains in config; ignoring")
+
         self._cap = None  # type: Optional[object]
         self._picam = None  # type: Optional[object]
         self._latest: Optional[np.ndarray] = None
@@ -124,6 +140,11 @@ class CameraService:
             )
             self._picam.configure(video_cfg)
             self._picam.start()
+            if self._picam_controls:
+                try:
+                    self._picam.set_controls(self._picam_controls)
+                except Exception:
+                    logger.exception("Failed to apply picamera2 controls: %s", self._picam_controls)
             time.sleep(0.5)  # warm-up
             return
 

@@ -15,19 +15,25 @@ camera:
   # Target frames per second sent to the inference engine.
   fps: 5
   exposure_mode: auto
-  awb_mode: auto
+  # awb_mode: 'auto' lets picamera2 auto-balance white. 'manual' disables
+  # AWB and uses colour_gains below — REQUIRED for NoIR cameras, where the
+  # auto-WB compensates for IR contamination by dropping red gain so hard
+  # that fruits end up looking blue. With 'manual' + tuned gains, reds and
+  # oranges come back close to natural.
+  awb_mode: manual
+  # Manual red/blue gains (only used when awb_mode is 'manual').
+  # Increase first number if reds/oranges look too dim/blue.
+  # Decrease second number if everything looks too blue.
+  colour_gains: [2.4, 0.5]
   # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
   source: auto  # auto | picamera2 | opencv
-  # 3x3 color correction matrix (RGB-space). Applied to every captured frame.
-  # Default values below are tuned for the Camera Module 3 NoIR (imx708_noir),
-  # which has no IR-cut filter and renders oranges as gray-blue without
-  # correction — breaking the COCO-trained fruit detector.
-  # Set to null/comment out to disable. Tune empirically for your camera +
-  # lighting; rows are output R, G, B; columns are input R, G, B coefficients.
+  # 3x3 color correction matrix applied AFTER the manual gains. Fine-tunes
+  # cross-channel bleed (e.g. residual IR red leaking into the green channel).
+  # Set to null / comment out to disable. Rows = output R/G/B; columns = input.
   color_matrix:
-    - [1.6, -0.3, -0.3]   # output Red  = 1.6 R - 0.3 G - 0.3 B
-    - [-0.2, 1.4, -0.2]   # output Green
-    - [-0.3, -0.3, 1.6]   # output Blue
+    - [1.3, -0.2, -0.1]
+    - [-0.1, 1.2, -0.1]
+    - [-0.2, -0.2, 1.4]
 
 inference:
   # TFLite XNNPACK threads. The Pi 4 has 4 cores.
