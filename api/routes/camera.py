@@ -46,7 +46,7 @@ async def get_config() -> CameraConfigResponse:
 
 @router.get("/controls", response_model=CameraControls)
 async def get_controls() -> CameraControls:
-    """Read the live camera tuning (gains + CCM)."""
+    """Read the live camera tuning (gains + CCM + AWB mode)."""
     cam = STATE.camera
     if cam is None or not hasattr(cam, "get_controls"):
         # Engine isn't running — fall back to config defaults.
@@ -55,12 +55,14 @@ async def get_controls() -> CameraControls:
         return CameraControls(
             red_gain=float(gains[0]),
             blue_gain=float(gains[1]),
+            awb_auto=(cfg.get("awb_mode") or "auto").lower() == "auto",
             color_matrix=cfg.get("color_matrix"),
         )
     c = cam.get_controls()  # type: ignore[attr-defined]
     return CameraControls(
         red_gain=float(c["red_gain"]),
         blue_gain=float(c["blue_gain"]),
+        awb_auto=bool(c.get("awb_auto", True)),
         color_matrix=c.get("color_matrix"),
     )
 
@@ -72,7 +74,7 @@ async def set_controls(req: CameraControls) -> CameraControls:
     if cam is None:
         raise HTTPException(status_code=503, detail="camera not running")
     if hasattr(cam, "update_gains"):
-        cam.update_gains(req.red_gain, req.blue_gain)  # type: ignore[attr-defined]
+        cam.update_gains(req.red_gain, req.blue_gain, awb_auto=req.awb_auto)  # type: ignore[attr-defined]
     if req.color_matrix is not None and hasattr(cam, "update_color_matrix"):
         cam.update_color_matrix(req.color_matrix)  # type: ignore[attr-defined]
     return await get_controls()

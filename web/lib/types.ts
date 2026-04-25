@@ -24,6 +24,7 @@ export interface CameraConfig {
 export interface CameraControls {
   red_gain: number;
   blue_gain: number;
+  awb_auto: boolean;
   color_matrix: number[][] | null;
 }
 

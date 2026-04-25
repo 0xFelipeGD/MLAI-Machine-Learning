@@ -1,19 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import clsx from "clsx";
 import { api } from "@/lib/api";
 
 /**
  * Live camera tuning + engine pause control.
  *
- * Sliders write to /api/camera/controls (POST) which calls
- * picamera2.set_controls() on the running camera — no service restart.
- * Pause button writes to /api/system/pause; while paused the engine
- * still streams the live feed but skips inference + DB writes.
+ * AUTO mode lets the camera's AWB algorithm run (preferred when a proper
+ * tuning_file is loaded — e.g. imx708.json on a NoIR sensor).
+ * MANUAL mode disables AWB and uses the slider gains.
+ *
+ * Pause writes to /api/system/pause; while paused the engine keeps
+ * streaming so you can preview colour tweaks but skips inference + DB.
  */
 export function CameraTuner() {
   const [redGain, setRedGain] = useState<number>(2.0);
   const [blueGain, setBlueGain] = useState<number>(1.0);
+  const [awbAuto, setAwbAuto] = useState<boolean>(true);
   const [paused, setPaused] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +29,7 @@ export function CameraTuner() {
         const [c, p] = await Promise.all([api.cameraControls(), api.pauseState()]);
         setRedGain(c.red_gain);
         setBlueGain(c.blue_gain);
+        setAwbAuto(c.awb_auto);
         setPaused(p.paused);
       } catch {
         // Engine probably not running — keep defaults silently.
@@ -32,15 +37,14 @@ export function CameraTuner() {
     })();
   }, []);
 
-  // Push gains to the API. Fire-and-forget; no debounce because the user
-  // wants instant feedback while dragging.
-  const pushGains = async (red: number, blue: number) => {
+  const push = async (red: number, blue: number, auto: boolean) => {
     setBusy(true);
     setError(null);
     try {
       await api.setCameraControls({
         red_gain: red,
         blue_gain: blue,
+        awb_auto: auto,
         color_matrix: null,
       });
     } catch (e) {
@@ -66,7 +70,28 @@ export function CameraTuner() {
   const reset = () => {
     setRedGain(2.0);
     setBlueGain(1.0);
-    pushGains(2.0, 1.0);
+    setAwbAuto(true);
+    push(2.0, 1.0, true);
+  };
+
+  // Switching to MANUAL pushes current sliders so the camera is held
+  // at exactly what the user sees on screen at that moment.
+  const setMode = (auto: boolean) => {
+    setAwbAuto(auto);
+    push(redGain, blueGain, auto);
+  };
+
+  // Slider drags push gains AND switch to MANUAL automatically — there is
+  // no point dragging if AWB is going to override the values.
+  const onRedGain = (v: number) => {
+    setRedGain(v);
+    setAwbAuto(false);
+    push(v, blueGain, false);
+  };
+  const onBlueGain = (v: number) => {
+    setBlueGain(v);
+    setAwbAuto(false);
+    push(redGain, v, false);
   };
 
   return (
@@ -78,12 +103,12 @@ export function CameraTuner() {
             type="button"
             onClick={togglePause}
             disabled={busy}
-            className={
-              "px-2 py-1 text-[11px] font-mono uppercase tracking-wider rounded border " +
-              (paused
+            className={clsx(
+              "px-2 py-1 text-[11px] font-mono uppercase tracking-wider rounded border",
+              paused
                 ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                : "border-[var(--color-fault)] text-[var(--color-fault)]")
-            }
+                : "border-[var(--color-fault)] text-[var(--color-fault)]"
+            )}
           >
             {paused ? "▶ resume" : "⏸ pause"}
           </button>
@@ -98,37 +123,70 @@ export function CameraTuner() {
         </div>
       </div>
 
-      <Slider
-        label="Red gain"
-        hint="Boost reds and oranges. NoIR cameras need a high value (2.5–4.0)."
-        min={0.2}
-        max={5.0}
-        step={0.05}
-        value={redGain}
-        onChange={(v) => {
-          setRedGain(v);
-          pushGains(v, blueGain);
-        }}
-      />
-      <Slider
-        label="Blue gain"
-        hint="Lower this if the image looks too blue/cyan (try 0.3–0.7 for NoIR)."
-        min={0.1}
-        max={3.0}
-        step={0.05}
-        value={blueGain}
-        onChange={(v) => {
-          setBlueGain(v);
-          pushGains(redGain, v);
-        }}
-      />
+      {/* AUTO / MANUAL toggle */}
+      <div className="mb-3">
+        <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
+          White balance
+        </div>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setMode(true)}
+            disabled={busy}
+            className={clsx(
+              "flex-1 px-2 py-1 text-[11px] font-mono uppercase tracking-wider rounded border",
+              awbAuto
+                ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                : "border-[var(--color-border)] text-[var(--color-text-dim)]"
+            )}
+          >
+            auto
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode(false)}
+            disabled={busy}
+            className={clsx(
+              "flex-1 px-2 py-1 text-[11px] font-mono uppercase tracking-wider rounded border",
+              !awbAuto
+                ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                : "border-[var(--color-border)] text-[var(--color-text-dim)]"
+            )}
+          >
+            manual
+          </button>
+        </div>
+        <p className="text-[10px] font-mono text-[var(--color-text-mute)] mt-1">
+          AUTO uses libcamera tuning. MANUAL applies the sliders below.
+        </p>
+      </div>
+
+      <div className={clsx("transition-opacity", awbAuto && "opacity-50")}>
+        <Slider
+          label="Red gain"
+          hint="Boost reds and oranges. NoIR cameras typically want 2.0–3.5."
+          min={0.2}
+          max={5.0}
+          step={0.05}
+          value={redGain}
+          onChange={onRedGain}
+        />
+        <Slider
+          label="Blue gain"
+          hint="Lower this if the image looks too blue/cyan."
+          min={0.1}
+          max={3.0}
+          step={0.05}
+          value={blueGain}
+          onChange={onBlueGain}
+        />
+      </div>
 
       {error && (
         <p className="mt-2 text-[11px] font-mono text-[var(--color-fault)]">{error}</p>
       )}
       <p className="mt-2 text-[10px] font-mono text-[var(--color-text-mute)]">
-        Changes apply live to the running camera. Bake favourites into{" "}
-        <code>config/system_config.yaml</code>.
+        Changes apply live. Bake favourites into <code>config/system_config.yaml</code>.
       </p>
     </div>
   );

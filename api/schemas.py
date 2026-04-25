@@ -50,6 +50,11 @@ class CameraControls(BaseModel):
     """Live camera tuning. Mirrors what the dashboard sliders expose."""
     red_gain: float = Field(ge=0.1, le=8.0)
     blue_gain: float = Field(ge=0.1, le=8.0)
+    # When True, the camera's auto-WB algorithm runs (using whatever tuning
+    # file is loaded) and red_gain/blue_gain are ignored. When False, AWB
+    # is disabled and the gains apply manually. Default True so the proper
+    # tuning_file (e.g. imx708.json on a NoIR sensor) gets a chance to work.
+    awb_auto: bool = True
     color_matrix: Optional[List[List[float]]] = None  # 3x3 matrix or null
 
 

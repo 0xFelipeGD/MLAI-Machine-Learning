@@ -238,18 +238,38 @@ class CameraService:
         return np.clip(out, 0, 255).astype(np.uint8)
 
     # --------------------------------------------------------- live tuning
-    def update_gains(self, red: float, blue: float) -> None:
-        """Live update of picamera2 ColourGains (no restart). Called from the API."""
+    def update_gains(self, red: float, blue: float, awb_auto: bool = False) -> None:
+        """Live update of picamera2 ColourGains (no restart).
+
+        When awb_auto is True, hands control back to the camera's auto-WB
+        algorithm (red/blue values are still recorded for the next time
+        the user toggles back to manual). When False, locks to the gains.
+        """
         red = float(np.clip(red, 0.1, 8.0))
         blue = float(np.clip(blue, 0.1, 8.0))
+        if awb_auto:
+            self._picam_controls.pop("AwbEnable", None)
+            self._picam_controls.pop("ColourGains", None)
+            if self._picam is not None:
+                try:
+                    self._picam.set_controls({"AwbEnable": True})
+                    logger.info("AWB switched to AUTO (gains follow the tuning file)")
+                except Exception:
+                    logger.exception("set_controls failed (auto)")
+            # Stash the gains under a non-applied key so the dashboard
+            # can show what manual values would be used if toggled back.
+            self._picam_controls["_pending_gains"] = (red, blue)
+            return
+
         self._picam_controls["AwbEnable"] = False
         self._picam_controls["ColourGains"] = (red, blue)
+        self._picam_controls.pop("_pending_gains", None)
         if self._picam is not None:
             try:
                 self._picam.set_controls({"AwbEnable": False, "ColourGains": (red, blue)})
-                logger.info("Live update ColourGains: (%.2f, %.2f)", red, blue)
+                logger.info("Live update ColourGains: red=%.2f blue=%.2f (AWB disabled)", red, blue)
             except Exception:
-                logger.exception("set_controls failed")
+                logger.exception("set_controls failed (manual)")
 
     def update_color_matrix(self, matrix: list) -> None:
         """Live update of the post-capture CCM. matrix is a 3x3 nested list."""
@@ -264,9 +284,15 @@ class CameraService:
 
     def get_controls(self) -> dict:
         """Return the current camera controls so the dashboard can show them."""
-        gains = self._picam_controls.get("ColourGains") or (1.0, 1.0)
+        gains = (
+            self._picam_controls.get("ColourGains")
+            or self._picam_controls.get("_pending_gains")
+            or (1.0, 1.0)
+        )
+        # AWB is auto unless we explicitly disabled it.
+        awb_auto = self._picam_controls.get("AwbEnable") is not False
         return {
-            "awb_enabled": not bool(self._picam_controls.get("AwbEnable") is False),
+            "awb_auto": awb_auto,
             "red_gain": float(gains[0]),
             "blue_gain": float(gains[1]),
             "color_matrix": self._ccm.tolist() if self._ccm is not None else None,
