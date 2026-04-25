@@ -5,7 +5,9 @@ import type {
   AgroStats,
   AgroStatus,
   CameraConfig,
+  CameraControls,
   HealthResponse,
+  PauseState,
 } from "./types";
 
 async function get<T>(url: string): Promise<T> {
@@ -27,9 +29,14 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 export const api = {
   // System
   health: () => get<HealthResponse>("/api/system/health"),
+  pauseState: () => get<PauseState>("/api/system/pause"),
+  setPause: (paused: boolean) => post<PauseState>("/api/system/pause", { paused }),
 
   // Camera
   cameraConfig: () => get<CameraConfig>("/api/camera/config"),
+  cameraControls: () => get<CameraControls>("/api/camera/controls"),
+  setCameraControls: (body: CameraControls) =>
+    post<CameraControls>("/api/camera/controls", body),
 
   // AGRO
   agro: {

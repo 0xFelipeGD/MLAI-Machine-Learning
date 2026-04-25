@@ -46,6 +46,17 @@ class CalibrationStartResponse(BaseModel):
     message: str
 
 
+class CameraControls(BaseModel):
+    """Live camera tuning. Mirrors what the dashboard sliders expose."""
+    red_gain: float = Field(ge=0.1, le=8.0)
+    blue_gain: float = Field(ge=0.1, le=8.0)
+    color_matrix: Optional[List[List[float]]] = None  # 3x3 matrix or null
+
+
+class PauseState(BaseModel):
+    paused: bool
+
+
 # ------------------------------------------------------------------ AGRO
 class AgroDetectionModel(BaseModel):
     fruit_class: str

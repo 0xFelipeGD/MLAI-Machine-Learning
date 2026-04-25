@@ -21,6 +21,10 @@ class EngineState:
         self.fps: float = 0.0
         self.paused: bool = False
         self.started_at: float = time.time()
+        # Reference to the live CameraService instance (set by Engine.start()).
+        # Lets API routes call camera.update_gains() / update_color_matrix()
+        # without re-instantiating the camera. None when engine isn't running.
+        self.camera: Optional[object] = None
 
     def update_agro(self, result: dict) -> None:
         with self._lock:

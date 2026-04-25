@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter
 
-from api.schemas import HealthResponse, SystemInfo
+from api.schemas import HealthResponse, PauseState, SystemInfo
 from engine.state import STATE
 
 try:
@@ -70,3 +70,17 @@ async def info() -> SystemInfo:
         platform=platform.platform(),
         python_version=sys.version.split()[0],
     )
+
+
+@router.get("/pause", response_model=PauseState)
+async def get_pause_state() -> PauseState:
+    return PauseState(paused=STATE.paused)
+
+
+@router.post("/pause", response_model=PauseState)
+async def set_pause(req: PauseState) -> PauseState:
+    """Pause / resume frame processing. While paused, the engine still
+    captures frames (so the live feed keeps streaming) but skips inference
+    and DB writes — useful to stop polluting history during setup/tuning."""
+    STATE.paused = bool(req.paused)
+    return PauseState(paused=STATE.paused)

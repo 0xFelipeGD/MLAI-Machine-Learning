@@ -27,16 +27,15 @@ camera:
   # strong red boost and a tight blue dampening here.
   # Increase first number if reds/oranges look too dim/blue.
   # Decrease second number if everything looks too blue.
-  colour_gains: [3.5, 0.3]
+  colour_gains: [2.0, 1.0]
   # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
   source: auto  # auto | picamera2 | opencv
-  # 3x3 color correction matrix applied AFTER the manual gains. The default
-  # below pulls some of the residual blue cast back toward red and clamps
-  # the blue output channel. Rows = output R/G/B; columns = input.
+  # 3x3 color correction matrix applied AFTER the manual gains. Default is
+  # identity (passthrough). Tune from the dashboard sliders.
   color_matrix:
-    - [1.5, -0.1, 0.2]    # output Red  pulls a bit of blue toward red
-    - [-0.1, 1.2, -0.1]   # output Green
-    - [-0.2, -0.1, 0.6]   # output Blue suppressed
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
 
 inference:
   # TFLite XNNPACK threads. The Pi 4 has 4 cores.

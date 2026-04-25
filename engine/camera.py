@@ -214,6 +214,41 @@ class CameraService:
         out = np.einsum("hwc,kc->hwk", f, self._ccm)  # type: ignore[arg-type]
         return np.clip(out, 0, 255).astype(np.uint8)
 
+    # --------------------------------------------------------- live tuning
+    def update_gains(self, red: float, blue: float) -> None:
+        """Live update of picamera2 ColourGains (no restart). Called from the API."""
+        red = float(np.clip(red, 0.1, 8.0))
+        blue = float(np.clip(blue, 0.1, 8.0))
+        self._picam_controls["AwbEnable"] = False
+        self._picam_controls["ColourGains"] = (red, blue)
+        if self._picam is not None:
+            try:
+                self._picam.set_controls({"AwbEnable": False, "ColourGains": (red, blue)})
+                logger.info("Live update ColourGains: (%.2f, %.2f)", red, blue)
+            except Exception:
+                logger.exception("set_controls failed")
+
+    def update_color_matrix(self, matrix: list) -> None:
+        """Live update of the post-capture CCM. matrix is a 3x3 nested list."""
+        try:
+            m = np.array(matrix, dtype=np.float32)
+            if m.shape != (3, 3):
+                raise ValueError(f"shape must be 3x3, got {m.shape}")
+            self._ccm = m
+            logger.info("Live update CCM:\n%s", m)
+        except Exception:
+            logger.exception("update_color_matrix failed")
+
+    def get_controls(self) -> dict:
+        """Return the current camera controls so the dashboard can show them."""
+        gains = self._picam_controls.get("ColourGains") or (1.0, 1.0)
+        return {
+            "awb_enabled": not bool(self._picam_controls.get("AwbEnable") is False),
+            "red_gain": float(gains[0]),
+            "blue_gain": float(gains[1]),
+            "color_matrix": self._ccm.tolist() if self._ccm is not None else None,
+        }
+
     # ------------------------------------------------------------------- read
     def read(self) -> Optional[np.ndarray]:
         """Return the most recent frame (or None if not yet captured)."""

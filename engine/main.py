@@ -54,6 +54,9 @@ class Engine:
     def start(self) -> None:
         logger.info("Starting MLAI engine (AGRO)")
         self.camera.start()
+        # Expose the live camera to the API so the dashboard sliders can
+        # tune ColourGains / CCM without restarting the service.
+        STATE.camera = self.camera
         try:
             self.agro = AgroPipeline(num_threads=self.num_threads)
         except Exception:
@@ -61,6 +64,7 @@ class Engine:
 
     def stop(self) -> None:
         self.camera.stop()
+        STATE.camera = None
         self._stop.set()
 
     async def run(self) -> None:
@@ -74,7 +78,10 @@ class Engine:
                 continue
             try:
                 if STATE.paused:
-                    pass
+                    # Keep the live preview alive while paused — only inference
+                    # and DB writes are skipped, so the dashboard sliders can
+                    # still show colour changes without polluting history.
+                    STATE.update_frame(_encode_jpeg_b64(frame), self.camera.get_fps())
                 elif self.agro is not None:
                     result, annotated = self.agro.process(frame)
                     insert_agro_result(result.to_dict())

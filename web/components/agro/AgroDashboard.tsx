@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { LiveFeed } from "@/components/scada/LiveFeed";
 import { MeasurementCard } from "@/components/scada/MeasurementCard";
+import { CameraTuner } from "./CameraTuner";
 import { FruitCard } from "./FruitCard";
 import { SizeHistogram } from "./SizeHistogram";
 import { api } from "@/lib/api";
@@ -56,8 +57,9 @@ export function AgroDashboard() {
       </div>
 
       <div className="col-span-12 xl:col-span-4 flex flex-col gap-3">
+        <CameraTuner />
         <div className="label px-1">Live Detections</div>
-        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
           {live.detections.length === 0 ? (
             <div className="panel p-6 text-center text-[var(--color-text-mute)] font-mono text-[11px] uppercase">
               waiting for fruits…

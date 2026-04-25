@@ -21,6 +21,16 @@ export interface CameraConfig {
   px_per_mm: number | null;
 }
 
+export interface CameraControls {
+  red_gain: number;
+  blue_gain: number;
+  color_matrix: number[][] | null;
+}
+
+export interface PauseState {
+  paused: boolean;
+}
+
 export interface AgroDetection {
   fruit_class: string;
   confidence: number;
