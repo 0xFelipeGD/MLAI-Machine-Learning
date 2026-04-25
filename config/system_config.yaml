@@ -15,23 +15,25 @@ camera:
   # Target frames per second sent to the inference engine.
   fps: 5
   exposure_mode: auto
-  # awb_mode: 'auto' lets picamera2 auto-balance white. 'manual' disables
-  # AWB and uses colour_gains below — REQUIRED for NoIR cameras, where the
-  # auto-WB compensates for IR contamination by dropping red gain so hard
-  # that fruits end up looking blue. With 'manual' + tuned gains, reds and
-  # oranges come back close to natural.
-  awb_mode: manual
-  # Manual red/blue gains (only used when awb_mode is 'manual').
-  # NoIR sensors push huge IR signal into the red channel, so libcamera's
-  # default tuning ends up FIGHTING you with a low red gain. We force a
-  # strong red boost and a tight blue dampening here.
-  # Increase first number if reds/oranges look too dim/blue.
-  # Decrease second number if everything looks too blue.
+  # libcamera tuning file. The KEY fix for NoIR sensors: force the regular
+  # RGB tuning (imx708.json) instead of letting libcamera auto-pick the IR
+  # variant (imx708_noir.json) which is optimised for night vision and
+  # makes daytime colours look gray/blue. picamera2 searches the standard
+  # libcamera paths (/usr/share/libcamera/ipa/rpi/vc4/), so the bare
+  # filename is enough — full path also works.
+  # Set to null/comment out to use libcamera's auto-detected default.
+  tuning_file: imx708.json
+  # awb_mode: 'auto' (recommended once tuning_file is set) or 'manual'.
+  # Manual mode forces the colour_gains below and disables auto-WB.
+  awb_mode: auto
+  # Manual red/blue gains (only consulted when awb_mode == 'manual').
+  # The dashboard 'Camera Tuning' sliders write to these at runtime.
   colour_gains: [2.0, 1.0]
   # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
   source: auto  # auto | picamera2 | opencv
-  # 3x3 color correction matrix applied AFTER the manual gains. Default is
-  # identity (passthrough). Tune from the dashboard sliders.
+  # 3x3 color correction matrix applied AFTER the manual gains. Identity
+  # by default — the tuning_file already does proper colour science, so
+  # the CCM is just a touch-up if you want one.
   color_matrix:
     - [1.0, 0.0, 0.0]
     - [0.0, 1.0, 0.0]

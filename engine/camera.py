@@ -90,10 +90,19 @@ class CameraService:
             except Exception:
                 logger.exception("Invalid camera.color_matrix in config; ignoring")
 
-        # picamera2 controls applied at sensor level (BEFORE the CCM). Setting
-        # AwbEnable=False + manual ColourGains is essential for NoIR cameras:
-        # auto-WB tries to "balance" the IR-bias by dropping the red gain,
-        # which is why fruits end up looking blue. We override that.
+        # Optional libcamera tuning file override. By default, libcamera
+        # auto-detects a NoIR sensor (imx708_noir) and loads the IR-tuned
+        # JSON which is built for night vision and produces gray/blue
+        # daytime colours. Forcing the regular imx708.json tuning on a
+        # NoIR sensor tells the IPA to behave as an ordinary RGB camera —
+        # the AWB algorithm switches to visible-light targets and reds
+        # come back. None = let libcamera pick (the default + broken path).
+        self._tuning_file: Optional[str] = cfg.get("tuning_file") or None
+
+        # picamera2 controls applied at sensor level. Setting AwbEnable=False +
+        # manual ColourGains is needed when the auto-WB still misbehaves;
+        # leave awb_mode='auto' if the tuning_file override already gives
+        # acceptable colours.
         self._picam_controls: dict = {}
         awb_mode = (cfg.get("awb_mode") or "auto").lower()
         if awb_mode in ("manual", "off", "disabled", "none"):
@@ -134,7 +143,21 @@ class CameraService:
             backend = "picamera2" if _HAS_PICAMERA2 else "opencv"
 
         if backend == "picamera2" and _HAS_PICAMERA2:
-            self._picam = Picamera2()
+            picam_kwargs = {}
+            if self._tuning_file:
+                # Try to load a custom tuning file. Most common use:
+                # tuning_file: "imx708.json" on a NoIR sensor to force
+                # regular-RGB tuning (fixes the daytime blue cast).
+                try:
+                    tuning = Picamera2.load_tuning_file(self._tuning_file)  # type: ignore[attr-defined]
+                    picam_kwargs["tuning"] = tuning
+                    logger.info("Loaded custom tuning: %s", self._tuning_file)
+                except Exception:
+                    logger.exception(
+                        "Failed to load tuning_file '%s'; falling back to default tuning",
+                        self._tuning_file,
+                    )
+            self._picam = Picamera2(**picam_kwargs)
             cfg_kwargs = {
                 "main": {"size": (self.width, self.height), "format": "RGB888"},
             }
