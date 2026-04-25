@@ -15,6 +15,16 @@ export function LiveFeed({ onResult }: Props) {
   const [fps, setFps] = useState(0);
   const [stamp, setStamp] = useState<string>("");
 
+  // Stash the latest onResult in a ref so the effect below can call it
+  // without depending on the prop reference. Without this, parents that
+  // pass an inline arrow function cause the WebSocket to disconnect and
+  // reconnect on every parent re-render — visible to the user as a fast
+  // OFFLINE/LIVE flicker on the status indicator.
+  const onResultRef = useRef(onResult);
+  useEffect(() => {
+    onResultRef.current = onResult;
+  }, [onResult]);
+
   useEffect(() => {
     const dispose = connectLive(
       (msg) => {
@@ -23,12 +33,12 @@ export function LiveFeed({ onResult }: Props) {
           setFps(msg.fps);
           setStamp(msg.timestamp.replace("T", " ").slice(0, 19) + "Z");
         }
-        onResult?.(msg);
+        onResultRef.current?.(msg);
       },
       (open) => setConnected(open)
     );
     return dispose;
-  }, [onResult]);
+  }, []);
 
   return (
     <div className="panel relative overflow-hidden">
