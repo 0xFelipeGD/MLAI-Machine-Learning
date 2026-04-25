@@ -18,6 +18,16 @@ camera:
   awb_mode: auto
   # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
   source: auto  # auto | picamera2 | opencv
+  # 3x3 color correction matrix (RGB-space). Applied to every captured frame.
+  # Default values below are tuned for the Camera Module 3 NoIR (imx708_noir),
+  # which has no IR-cut filter and renders oranges as gray-blue without
+  # correction — breaking the COCO-trained fruit detector.
+  # Set to null/comment out to disable. Tune empirically for your camera +
+  # lighting; rows are output R, G, B; columns are input R, G, B coefficients.
+  color_matrix:
+    - [1.6, -0.3, -0.3]   # output Red  = 1.6 R - 0.3 G - 0.3 B
+    - [-0.2, 1.4, -0.2]   # output Green
+    - [-0.3, -0.3, 1.6]   # output Blue
 
 inference:
   # TFLite XNNPACK threads. The Pi 4 has 4 cores.

@@ -74,6 +74,22 @@ class CameraService:
         # source: "auto" | "picamera2" | "opencv"
         self.source = cfg.get("source", source) or "auto"
 
+        # Optional 3x3 color correction matrix applied to every captured RGB
+        # frame. NoIR (no-IR-cut-filter) Pi cameras need this to look like
+        # normal RGB — without correction, oranges look gray-blue and the
+        # COCO-trained detector misses every fruit. See system_config.yaml.
+        ccm_raw = cfg.get("color_matrix")
+        self._ccm: Optional[np.ndarray] = None
+        if ccm_raw and isinstance(ccm_raw, list) and len(ccm_raw) == 3:
+            try:
+                m = np.array(ccm_raw, dtype=np.float32)
+                if m.shape == (3, 3):
+                    self._ccm = m
+
+                    logger.info("Camera color matrix enabled:\n%s", m)
+            except Exception:
+                logger.exception("Invalid camera.color_matrix in config; ignoring")
+
         self._cap = None  # type: Optional[object]
         self._picam = None  # type: Optional[object]
         self._latest: Optional[np.ndarray] = None
@@ -145,11 +161,27 @@ class CameraService:
         if self._picam is not None:
             # picamera2 returns RGB; convert to BGR for OpenCV consistency.
             rgb = self._picam.capture_array()
+            if self._ccm is not None:
+                rgb = self._apply_ccm(rgb)
             return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         if self._cap is not None:
             ok, frame = self._cap.read()
-            return frame if ok else None
+            if not ok or frame is None:
+                return None
+            if self._ccm is not None:
+                # OpenCV gives BGR; CCM is RGB-shaped, so we reorder.
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb = self._apply_ccm(rgb)
+                frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            return frame
         return None
+
+    def _apply_ccm(self, rgb: np.ndarray) -> np.ndarray:
+        """Apply the configured 3x3 color matrix to an HxWx3 uint8 RGB frame."""
+        f = rgb.astype(np.float32)
+        # einsum form is faster than reshape-and-matmul for HxWx3 @ 3x3.
+        out = np.einsum("hwc,kc->hwk", f, self._ccm)  # type: ignore[arg-type]
+        return np.clip(out, 0, 255).astype(np.uint8)
 
     # ------------------------------------------------------------------- read
     def read(self) -> Optional[np.ndarray]:

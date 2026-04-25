@@ -9,8 +9,10 @@ agro:
   # MobileNet V2 quality classifier input
   quality_input_size: [224, 224]
 
-  # Minimum confidence to keep a detection
-  detection_threshold: 0.5
+  # Minimum confidence to keep a detection. 0.5 is the COCO default; 0.30
+  # is more permissive — useful when the camera is the NoIR variant whose
+  # color cast lowers detector confidence.
+  detection_threshold: 0.30
   # Non-max suppression IoU
   nms_iou: 0.45
   # Maximum detections per frame
