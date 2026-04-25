@@ -22,18 +22,21 @@ camera:
   # oranges come back close to natural.
   awb_mode: manual
   # Manual red/blue gains (only used when awb_mode is 'manual').
+  # NoIR sensors push huge IR signal into the red channel, so libcamera's
+  # default tuning ends up FIGHTING you with a low red gain. We force a
+  # strong red boost and a tight blue dampening here.
   # Increase first number if reds/oranges look too dim/blue.
   # Decrease second number if everything looks too blue.
-  colour_gains: [2.4, 0.5]
+  colour_gains: [3.5, 0.3]
   # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
   source: auto  # auto | picamera2 | opencv
-  # 3x3 color correction matrix applied AFTER the manual gains. Fine-tunes
-  # cross-channel bleed (e.g. residual IR red leaking into the green channel).
-  # Set to null / comment out to disable. Rows = output R/G/B; columns = input.
+  # 3x3 color correction matrix applied AFTER the manual gains. The default
+  # below pulls some of the residual blue cast back toward red and clamps
+  # the blue output channel. Rows = output R/G/B; columns = input.
   color_matrix:
-    - [1.3, -0.2, -0.1]
-    - [-0.1, 1.2, -0.1]
-    - [-0.2, -0.2, 1.4]
+    - [1.5, -0.1, 0.2]    # output Red  pulls a bit of blue toward red
+    - [-0.1, 1.2, -0.1]   # output Green
+    - [-0.2, -0.1, 0.6]   # output Blue suppressed
 
 inference:
   # TFLite XNNPACK threads. The Pi 4 has 4 cores.

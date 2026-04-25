@@ -135,11 +135,21 @@ class CameraService:
 
         if backend == "picamera2" and _HAS_PICAMERA2:
             self._picam = Picamera2()
-            video_cfg = self._picam.create_video_configuration(
-                main={"size": (self.width, self.height), "format": "RGB888"}
-            )
+            cfg_kwargs = {
+                "main": {"size": (self.width, self.height), "format": "RGB888"},
+            }
+            # Controls baked into the configuration apply from frame 1, before
+            # the AWB algorithm has a chance to "balance" anything. Setting
+            # them via set_controls() after start() is too late on NoIR — the
+            # first batch of frames comes out with default AWB and the auto
+            # exposure latches onto them.
+            if self._picam_controls:
+                cfg_kwargs["controls"] = dict(self._picam_controls)
+            video_cfg = self._picam.create_video_configuration(**cfg_kwargs)
             self._picam.configure(video_cfg)
             self._picam.start()
+            # Re-assert controls after start in case the configuration path
+            # silently dropped them (libcamera version quirks).
             if self._picam_controls:
                 try:
                     self._picam.set_controls(self._picam_controls)
