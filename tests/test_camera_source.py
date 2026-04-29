@@ -153,3 +153,72 @@ def test_open_backend_stream_error_does_not_leak_credentials():
     assert "secretpass" not in err
     assert "secretuser" not in err
     assert "10.107.97.1" in err  # host should still be present for debugging
+
+
+def test_stream_reconnect_after_threshold_failures():
+    """30 consecutive failed reads on a stream backend trigger release+reopen."""
+    from engine.camera import STREAM_RECONNECT_THRESHOLD
+
+    cam = _make_service_with_source("http://10.107.97.1:8080/video")
+
+    fake_cap_first = MagicMock()
+    fake_cap_first.isOpened.return_value = True
+    fake_cap_first.read.return_value = (False, None)
+
+    fake_cap_second = MagicMock()
+    fake_cap_second.isOpened.return_value = True
+    fake_cap_second.read.return_value = (False, None)
+
+    with patch(
+        "engine.camera.cv2.VideoCapture",
+        side_effect=[fake_cap_first, fake_cap_second],
+    ) as vc:
+        cam._open_backend()
+        # Hit the threshold exactly: STREAM_RECONNECT_THRESHOLD failures
+        # should not trigger a reconnect; the (N+1)th does.
+        for _ in range(STREAM_RECONNECT_THRESHOLD):
+            cam._grab_one()
+        assert vc.call_count == 1, "should not reconnect at exactly threshold"
+        cam._grab_one()
+        assert vc.call_count == 2, "should reconnect after exceeding threshold"
+
+    fake_cap_first.release.assert_called_once()
+
+
+def test_stream_reconnect_counter_resets_on_success():
+    """A successful read clears the failure counter."""
+    import numpy as np
+    from engine.camera import STREAM_RECONNECT_THRESHOLD
+
+    cam = _make_service_with_source("http://10.107.97.1:8080/video")
+
+    fake_cap = MagicMock()
+    fake_cap.isOpened.return_value = True
+    good_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    # Pattern: 25 fails, 1 success, 25 fails — should NOT reconnect because
+    # the success in the middle resets the counter.
+    reads = [(False, None)] * 25 + [(True, good_frame)] + [(False, None)] * 25
+    fake_cap.read.side_effect = reads
+
+    with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap) as vc:
+        cam._open_backend()
+        for _ in range(len(reads)):
+            cam._grab_one()
+        assert vc.call_count == 1, "counter must reset on success → no reconnect"
+
+
+def test_stream_fail_counter_does_not_apply_to_picamera2():
+    """The reconnect path is stream-only; opencv-local must not get rebuilt."""
+    from engine.camera import STREAM_RECONNECT_THRESHOLD
+
+    cam = _make_service_with_source("opencv")
+
+    fake_cap = MagicMock()
+    fake_cap.isOpened.return_value = True
+    fake_cap.read.return_value = (False, None)
+
+    with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap) as vc:
+        cam._open_backend()
+        for _ in range(STREAM_RECONNECT_THRESHOLD + 5):
+            cam._grab_one()
+        assert vc.call_count == 1, "opencv-local must not auto-reconnect"

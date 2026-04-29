@@ -35,6 +35,12 @@ from engine import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
+# Number of consecutive empty reads on a stream source before we tear down
+# the VideoCapture and reopen it. At fps=5 this is ~6 s of dead air, which
+# is long enough to ride out a typical Wi-Fi hiccup but short enough that
+# the user notices a stale feed quickly.
+STREAM_RECONNECT_THRESHOLD = 30
+
 # picamera2 only exists on a Raspberry Pi. Wrap the import so this module
 # still loads on a development PC where the library is missing.
 try:
@@ -277,8 +283,15 @@ class CameraService:
             return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         if self._cap is not None:
             ok, frame = self._cap.read()
+            is_stream = _resolve_backend(self.source, _HAS_PICAMERA2) == "stream"
             if not ok or frame is None:
+                if is_stream:
+                    self._stream_fail_count += 1
+                    if self._stream_fail_count > STREAM_RECONNECT_THRESHOLD:
+                        self._reconnect_stream()
                 return None
+            if is_stream:
+                self._stream_fail_count = 0
             if self._ccm is not None:
                 # OpenCV gives BGR; CCM is RGB-shaped, so we reorder.
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -286,6 +299,24 @@ class CameraService:
                 frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             return frame
         return None
+
+    def _reconnect_stream(self) -> None:
+        """Tear down the current stream VideoCapture and reopen it."""
+        safe_url = _redact_url(self.source)
+        logger.warning(
+            "stream lost (>%d consecutive empty reads), reconnecting to %s",
+            STREAM_RECONNECT_THRESHOLD,
+            safe_url,
+        )
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                logger.exception("VideoCapture.release() raised during reconnect")
+        self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+        if not self._cap.isOpened():
+            logger.error("Reconnect failed; will retry on next failure batch")
+        self._stream_fail_count = 0
 
     def _apply_ccm(self, rgb: np.ndarray) -> np.ndarray:
         """Apply the configured 3x3 color matrix to an HxWx3 uint8 RGB frame."""
