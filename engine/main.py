@@ -101,12 +101,19 @@ class Engine:
                     # Keep the live preview alive while paused — only inference
                     # and DB writes are skipped, so the dashboard sliders can
                     # still show colour changes without polluting history.
-                    STATE.update_frame(_encode_jpeg_b64(frame), self.camera.get_fps())
+                    encoded = await asyncio.to_thread(_encode_jpeg_b64, frame)
+                    STATE.update_frame(encoded, self.camera.get_fps())
                 elif self.agro is not None:
-                    result, annotated = self.agro.process(frame)
-                    insert_agro_result(result.to_dict())
+                    # Run inference + DB write + JPEG encode in worker threads
+                    # so the asyncio event loop stays responsive. Without this,
+                    # one ~70 ms frame cycle would block /api/* and /ws/live
+                    # for the whole duration; at 25 fps that's near 100% of
+                    # the loop's wall time and the dashboard sees timeouts.
+                    result, annotated = await asyncio.to_thread(self.agro.process, frame)
+                    await asyncio.to_thread(insert_agro_result, result.to_dict())
                     STATE.update_agro(result.to_dict())
-                    STATE.update_frame(_encode_jpeg_b64(annotated), self.camera.get_fps())
+                    encoded = await asyncio.to_thread(_encode_jpeg_b64, annotated)
+                    STATE.update_frame(encoded, self.camera.get_fps())
             except Exception:
                 logger.exception("frame processing failed")
 
