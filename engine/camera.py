@@ -21,6 +21,7 @@ Usage
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from pathlib import Path
@@ -57,6 +58,25 @@ def _load_camera_config() -> dict:
     with open(config_path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     return data.get("camera", {})
+
+
+_URL_RE = re.compile(r"^(https?|rtsp)://", re.IGNORECASE)
+
+
+def _resolve_backend(source: str, has_picamera2: bool) -> str:
+    """Map a config `source` value to a concrete backend kind.
+
+    Returns one of: "stream" | "picamera2" | "opencv".
+
+    A URL (http://, https://, rtsp://) resolves to "stream".
+    "auto" picks picamera2 if available, otherwise opencv.
+    Any other string is taken at face value (must be "picamera2" or "opencv").
+    """
+    if isinstance(source, str) and _URL_RE.match(source):
+        return "stream"
+    if source == "auto":
+        return "picamera2" if has_picamera2 else "opencv"
+    return source
 
 
 class CameraService:
