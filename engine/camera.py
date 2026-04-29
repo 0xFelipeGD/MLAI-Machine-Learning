@@ -185,6 +185,11 @@ class CameraService:
         # initialised here so the attribute exists from construction time.
         self._stream_fail_count: int = 0
 
+        # Cache do backend kind resolvido. Setado em _open_backend; consultado
+        # por _grab_one (hot path) sem precisar refazer a regex match a cada
+        # frame.
+        self._is_stream: bool = False
+
     # ------------------------------------------------------------------ start
     def start(self) -> None:
         """Open the camera and start the background grab thread."""
@@ -242,6 +247,7 @@ class CameraService:
             if not self._cap.isOpened():
                 raise RuntimeError(f"OpenCV could not open stream: {safe_url}")
             logger.info("CameraService stream backend opened: %s", safe_url)
+            self._is_stream = True
             return
 
         # OpenCV local fallback (PC dev or Pi without picamera2)
@@ -283,14 +289,13 @@ class CameraService:
             return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         if self._cap is not None:
             ok, frame = self._cap.read()
-            is_stream = _resolve_backend(self.source, _HAS_PICAMERA2) == "stream"
             if not ok or frame is None:
-                if is_stream:
+                if self._is_stream:
                     self._stream_fail_count += 1
-                    if self._stream_fail_count > STREAM_RECONNECT_THRESHOLD:
+                    if self._stream_fail_count > STREAM_RECONNECT_THRESHOLD:  # strictly greater: trigger on the (N+1)th failure
                         self._reconnect_stream()
                 return None
-            if is_stream:
+            if self._is_stream:
                 self._stream_fail_count = 0
             if self._ccm is not None:
                 # OpenCV gives BGR; CCM is RGB-shaped, so we reorder.
@@ -316,6 +321,10 @@ class CameraService:
         self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
         if not self._cap.isOpened():
             logger.error("Reconnect failed; will retry on next failure batch")
+        # Reset unconditionally — even if the reopen above failed, we want
+        # to wait another STREAM_RECONNECT_THRESHOLD failures before the
+        # next attempt. Otherwise a permanently-down stream would loop us
+        # in tight reconnect attempts every frame.
         self._stream_fail_count = 0
 
     def _apply_ccm(self, rgb: np.ndarray) -> np.ndarray:

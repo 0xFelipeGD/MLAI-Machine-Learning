@@ -97,6 +97,7 @@ def _make_service_with_source(source: str) -> "CameraService":
     cam._frame_times = []
     cam._fps = 0.0
     cam._stream_fail_count = 0
+    cam._is_stream = False  # _open_backend overrides for stream backend
     return cam
 
 
