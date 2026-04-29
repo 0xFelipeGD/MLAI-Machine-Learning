@@ -246,6 +246,15 @@ class CameraService:
             safe_url = _redact_url(self.source)
             if not self._cap.isOpened():
                 raise RuntimeError(f"OpenCV could not open stream: {safe_url}")
+            # Hint to keep FFmpeg's internal queue at 1 frame so cap.read()
+            # always returns the latest frame instead of accumulating delay
+            # when our consume rate is slower than the source's produce rate.
+            # Some FFmpeg builds ignore this; the _loop also drains by not
+            # sleeping on stream sources (see below).
+            try:
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
             logger.info("CameraService stream backend opened: %s", safe_url)
             self._is_stream = True
             return
@@ -276,9 +285,15 @@ class CameraService:
                     self._frame_times.append(now)
                     self._frame_times = [t for t in self._frame_times if now - t <= 1.0]
                     self._fps = float(len(self._frame_times))
-            elapsed = time.time() - t0
-            if elapsed < period:
-                time.sleep(period - elapsed)
+            # Stream backends self-pace via cap.read() blocking on the network
+            # producer; sleeping here just lets FFmpeg buffer incoming frames,
+            # adding seconds of delay to the dashboard. The engine reads from
+            # _latest at its own target_fps, so the camera thread is free to
+            # run as fast as the source supplies.
+            if not self._is_stream:
+                elapsed = time.time() - t0
+                if elapsed < period:
+                    time.sleep(period - elapsed)
 
     def _grab_one(self) -> Optional[np.ndarray]:
         if self._picam is not None:
@@ -321,6 +336,11 @@ class CameraService:
         self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
         if not self._cap.isOpened():
             logger.error("Reconnect failed; will retry on next failure batch")
+        else:
+            try:
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
         # Reset unconditionally — even if the reopen above failed, we want
         # to wait another STREAM_RECONNECT_THRESHOLD failures before the
         # next attempt. Otherwise a permanently-down stream would loop us
