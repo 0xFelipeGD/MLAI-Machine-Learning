@@ -422,6 +422,9 @@ Run `python scripts/benchmark.py` on the Pi to measure your own setup.
 | `ai_edge_litert` / `tflite_runtime` missing | Wizard wasn't run — `pip3 install -r requirements.txt --break-system-packages` |
 | TFLite model won't load | Wrong arch or corrupted file — `file model.tflite` |
 | Calibration: no checkerboard found | More light, flatter board, match `--pattern` |
+| Live feed black after switching to phone (§9) | Confirm IP Webcam is running, gateway IP matches `ip route`, port 8080 reachable: `curl -I http://<phone-ip>:8080/video` |
+| Phone stream stutters / drops | Lower the phone-side resolution to 720p; check Wi-Fi signal strength on the Pi |
+| AWB / red-gain / blue-gain sliders inert on phone stream | Those are picamera2 controls; only the CCM matrix slider applies on stream sources |
 | Pi reboots randomly | Power supply too weak — use the official 27 W USB-C PSU |
 
 Full diagnostic dump:
