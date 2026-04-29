@@ -65,14 +65,20 @@ class Engine:
 
     def start(self) -> None:
         logger.info("Starting MLAI engine (AGRO)")
-        self.camera.start()
-        # Expose the live camera to the API so the dashboard sliders can
-        # tune ColourGains / CCM without restarting the service.
-        STATE.camera = self.camera
+        # Load TFLite models FIRST. Once the camera thread starts it
+        # decodes MJPEG at STREAM_READ_FPS (30 Hz) and easily saturates
+        # a Pi 4 core, which can starve the XNNPACK thread pool that
+        # AgroPipeline init needs — turning a normally fast init into
+        # a several-minute hang. Models loaded → camera started: no
+        # contention during the (one-time) load.
         try:
             self.agro = AgroPipeline(num_threads=self.num_threads)
         except Exception:
             logger.exception("Failed to construct AGRO pipeline")
+        self.camera.start()
+        # Expose the live camera to the API so the dashboard sliders can
+        # tune ColourGains / CCM without restarting the service.
+        STATE.camera = self.camera
 
     def stop(self) -> None:
         self.camera.stop()
