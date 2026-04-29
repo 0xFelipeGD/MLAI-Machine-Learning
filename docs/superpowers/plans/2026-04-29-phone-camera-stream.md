@@ -601,7 +601,7 @@ Instead of the Pi Camera Module, you can stream from an Android phone over Wi-Fi
 **One-time phone setup**
 
 1. Install **IP Webcam** by Pavel Khlebovich from the Play Store (free).
-2. Open the app. Optional but recommended: scroll to **Video preferences → Photo resolution** and pick a 720p or 1080p mode (4K MJPEG saturates Wi-Fi).
+2. Open the app. Optional but recommended: scroll to **Video preferences → Video resolution** and pick 1280×720 or 1920×1080 (4K MJPEG saturates Wi-Fi). The *Photo resolution* setting nearby only affects the still-image `/photo.jpg` endpoint, not the live MJPEG stream we consume.
 3. Scroll to the bottom and tap **Start server**.
 4. The screen now shows the stream URL, e.g. `http://192.0.2.42:8080`. The Pi will connect to `<that-ip>:8080/video`.
 
