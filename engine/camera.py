@@ -263,6 +263,11 @@ class CameraService:
             # sleeping on stream sources (see below).
             try:
                 self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                # Bound cv2.read() blocking. Without this, FFmpeg can hang
+                # for tens of seconds when a TCP stream stalls (phone IP
+                # Webcam restarted mid-stream, Wi-Fi blip), preventing the
+                # auto-reconnect path in _grab_one from triggering.
+                self._cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
             except Exception:
                 pass
             logger.info("CameraService stream backend opened: %s", safe_url)
@@ -359,13 +364,21 @@ class CameraService:
             except Exception:
                 logger.exception("VideoCapture.release() raised during reconnect")
         self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
-        if not self._cap.isOpened():
-            logger.error("Reconnect failed; will retry on next failure batch")
-        else:
+        if self._cap.isOpened():
             try:
                 self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self._cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
             except Exception:
                 pass
+            logger.info("Reconnect succeeded")
+        else:
+            # Pause before allowing the next batch of reads to attempt
+            # another reconnect. Without this, the camera thread spins
+            # in a tight reconnect/refusal loop that leaks cv2/FFmpeg
+            # state — over time the connection just stops recovering
+            # even after the source comes back up.
+            logger.error("Reconnect failed; sleeping 2s before next attempt")
+            time.sleep(2.0)
         # Reset unconditionally — even if the reopen above failed, we want
         # to wait another STREAM_RECONNECT_THRESHOLD failures before the
         # next attempt. Otherwise a permanently-down stream would loop us
