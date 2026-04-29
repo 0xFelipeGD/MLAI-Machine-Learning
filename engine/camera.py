@@ -202,10 +202,27 @@ class CameraService:
 
     # ------------------------------------------------------------------ start
     def start(self) -> None:
-        """Open the camera and start the background grab thread."""
+        """Open the camera and start the background grab thread.
+
+        For stream sources, an initial open failure is non-fatal — the
+        background loop will keep trying to open until it succeeds. This
+        means the engine can boot before the phone IP Webcam app is
+        running, and recover automatically once the source comes up.
+        For picamera2 / opencv-local sources, an open failure is still
+        treated as fatal (nothing useful to retry against).
+        """
         if self._thread is not None:
             return
-        self._open_backend()
+        is_stream = isinstance(self.source, str) and bool(_URL_RE.match(self.source))
+        try:
+            self._open_backend()
+        except Exception:
+            if not is_stream:
+                raise
+            logger.warning(
+                "Initial stream open failed for %s; camera thread will retry",
+                _redact_url(self.source),
+            )
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="camera")
         self._thread.start()
@@ -286,6 +303,15 @@ class CameraService:
     def _loop(self) -> None:
         period = 1.0 / max(self.target_fps, 1)
         while not self._stop.is_set():
+            # Stream-source case where the initial open failed (phone
+            # wasn't streaming when the Pi booted). Keep trying so the
+            # camera comes alive automatically once the source is up.
+            if self._cap is None and self._picam is None:
+                try:
+                    self._open_backend()
+                except Exception:
+                    time.sleep(2.0)
+                    continue
             t0 = time.time()
             try:
                 frame = self._grab_one()
