@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 
 
 def _encode_jpeg_b64(img) -> str:
-    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    quality = int(STATE.jpeg_quality)
+    if quality < 30:
+        quality = 30
+    elif quality > 95:
+        quality = 95
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     if not ok:
         return ""
     return base64.b64encode(buf.tobytes()).decode("ascii")
@@ -42,9 +47,16 @@ class Engine:
         cfg_path = PROJECT_ROOT / "config" / "system_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as fh:
             self.cfg = yaml.safe_load(fh) or {}
-        self.fps_target = int((self.cfg.get("camera") or {}).get("fps", 5))
+        cam_cfg = self.cfg.get("camera") or {}
+        self.fps_target = int(cam_cfg.get("fps", 5))
         self.num_threads = int((self.cfg.get("inference") or {}).get("num_threads", 4))
         self.prune_days = int((self.cfg.get("storage") or {}).get("prune_after_days", 30))
+
+        # Seed runtime-mutable knobs from config so the dashboard sliders
+        # start where the YAML says. Sliders mutate STATE; "bake favourites"
+        # by editing the YAML and restarting.
+        STATE.target_fps = self.fps_target
+        STATE.jpeg_quality = int(cam_cfg.get("jpeg_quality", 80))
 
         self.camera = CameraService()
         self.agro: Optional[AgroPipeline] = None
@@ -53,14 +65,20 @@ class Engine:
 
     def start(self) -> None:
         logger.info("Starting MLAI engine (AGRO)")
-        self.camera.start()
-        # Expose the live camera to the API so the dashboard sliders can
-        # tune ColourGains / CCM without restarting the service.
-        STATE.camera = self.camera
+        # Load TFLite models FIRST. Once the camera thread starts it
+        # decodes MJPEG at STREAM_READ_FPS (30 Hz) and easily saturates
+        # a Pi 4 core, which can starve the XNNPACK thread pool that
+        # AgroPipeline init needs — turning a normally fast init into
+        # a several-minute hang. Models loaded → camera started: no
+        # contention during the (one-time) load.
         try:
             self.agro = AgroPipeline(num_threads=self.num_threads)
         except Exception:
             logger.exception("Failed to construct AGRO pipeline")
+        self.camera.start()
+        # Expose the live camera to the API so the dashboard sliders can
+        # tune ColourGains / CCM without restarting the service.
+        STATE.camera = self.camera
 
     def stop(self) -> None:
         self.camera.stop()
@@ -68,9 +86,11 @@ class Engine:
         self._stop.set()
 
     async def run(self) -> None:
-        period = 1.0 / max(self.fps_target, 1)
         last_prune = time.time()
         while not self._stop.is_set():
+            # Re-read each iteration so the dashboard slider takes effect
+            # without restarting the engine.
+            period = 1.0 / max(int(STATE.target_fps), 1)
             t0 = time.perf_counter()
             frame = self.camera.read()
             if frame is None:
@@ -81,12 +101,19 @@ class Engine:
                     # Keep the live preview alive while paused — only inference
                     # and DB writes are skipped, so the dashboard sliders can
                     # still show colour changes without polluting history.
-                    STATE.update_frame(_encode_jpeg_b64(frame), self.camera.get_fps())
+                    encoded = await asyncio.to_thread(_encode_jpeg_b64, frame)
+                    STATE.update_frame(encoded, self.camera.get_fps())
                 elif self.agro is not None:
-                    result, annotated = self.agro.process(frame)
-                    insert_agro_result(result.to_dict())
+                    # Run inference + DB write + JPEG encode in worker threads
+                    # so the asyncio event loop stays responsive. Without this,
+                    # one ~70 ms frame cycle would block /api/* and /ws/live
+                    # for the whole duration; at 25 fps that's near 100% of
+                    # the loop's wall time and the dashboard sees timeouts.
+                    result, annotated = await asyncio.to_thread(self.agro.process, frame)
+                    await asyncio.to_thread(insert_agro_result, result.to_dict())
                     STATE.update_agro(result.to_dict())
-                    STATE.update_frame(_encode_jpeg_b64(annotated), self.camera.get_fps())
+                    encoded = await asyncio.to_thread(_encode_jpeg_b64, annotated)
+                    STATE.update_frame(encoded, self.camera.get_fps())
             except Exception:
                 logger.exception("frame processing failed")
 

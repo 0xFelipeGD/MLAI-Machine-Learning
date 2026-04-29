@@ -47,15 +47,15 @@ class CalibrationStartResponse(BaseModel):
 
 
 class CameraControls(BaseModel):
-    """Live camera tuning. Mirrors what the dashboard sliders expose."""
-    red_gain: float = Field(ge=0.1, le=8.0)
-    blue_gain: float = Field(ge=0.1, le=8.0)
-    # When True, the camera's auto-WB algorithm runs (using whatever tuning
-    # file is loaded) and red_gain/blue_gain are ignored. When False, AWB
-    # is disabled and the gains apply manually. Default True so the proper
-    # tuning_file (e.g. imx708.json on a NoIR sensor) gets a chance to work.
-    awb_auto: bool = True
-    color_matrix: Optional[List[List[float]]] = None  # 3x3 matrix or null
+    """Live stream tuning surfaced as dashboard sliders.
+
+    Replaces the picamera2-era AWB/red/blue/CCM controls (silently inert
+    when the source is a phone stream). target_fps and jpeg_quality are
+    the two knobs that actually matter for tuning latency vs CPU vs
+    bandwidth on a network camera.
+    """
+    target_fps: int = Field(ge=1, le=30, description="Engine inference + dashboard cadence")
+    jpeg_quality: int = Field(ge=30, le=95, description="JPEG quality of frames sent to the dashboard")
 
 
 class PauseState(BaseModel):

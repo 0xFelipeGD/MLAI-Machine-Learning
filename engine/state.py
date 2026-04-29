@@ -22,9 +22,13 @@ class EngineState:
         self.paused: bool = False
         self.started_at: float = time.time()
         # Reference to the live CameraService instance (set by Engine.start()).
-        # Lets API routes call camera.update_gains() / update_color_matrix()
-        # without re-instantiating the camera. None when engine isn't running.
+        # None when engine isn't running.
         self.camera: Optional[object] = None
+        # Runtime-mutable knobs surfaced as dashboard sliders. Engine.run()
+        # re-reads these every iteration; _encode_jpeg_b64 reads the quality
+        # at encode time. Seeded from config in Engine.__init__.
+        self.target_fps: int = 10
+        self.jpeg_quality: int = 80
 
     def update_agro(self, result: dict) -> None:
         with self._lock:

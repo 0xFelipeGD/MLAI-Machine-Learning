@@ -22,10 +22,8 @@ export interface CameraConfig {
 }
 
 export interface CameraControls {
-  red_gain: number;
-  blue_gain: number;
-  awb_auto: boolean;
-  color_matrix: number[][] | null;
+  target_fps: number;
+  jpeg_quality: number;
 }
 
 export interface PauseState {

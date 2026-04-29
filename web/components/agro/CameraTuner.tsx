@@ -1,35 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 
 /**
- * Live camera tuning + engine pause control.
+ * Live stream tuning + engine pause control.
  *
- * AUTO mode lets the camera's AWB algorithm run (preferred when a proper
- * tuning_file is loaded — e.g. imx708.json on a NoIR sensor).
- * MANUAL mode disables AWB and uses the slider gains.
+ * Two knobs:
+ *  - target_fps  — how often the engine runs inference and pushes a
+ *                  frame to the dashboard (1–30). Lower = less CPU,
+ *                  rougher live feel.
+ *  - jpeg_quality — encode quality of the frame sent over WebSocket
+ *                   (30–95). Lower = smaller frame, less bandwidth,
+ *                   more compression artefacts.
  *
  * Pause writes to /api/system/pause; while paused the engine keeps
- * streaming so you can preview colour tweaks but skips inference + DB.
+ * streaming (preview alive) but skips inference + DB writes.
  */
+const DEFAULT_FPS = 10;
+const DEFAULT_QUALITY = 80;
+
 export function CameraTuner() {
-  const [redGain, setRedGain] = useState<number>(2.0);
-  const [blueGain, setBlueGain] = useState<number>(1.0);
-  const [awbAuto, setAwbAuto] = useState<boolean>(true);
+  const [targetFps, setTargetFps] = useState<number>(DEFAULT_FPS);
+  const [jpegQuality, setJpegQuality] = useState<number>(DEFAULT_QUALITY);
   const [paused, setPaused] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial load — pull current values from the API.
   useEffect(() => {
     (async () => {
       try {
         const [c, p] = await Promise.all([api.cameraControls(), api.pauseState()]);
-        setRedGain(c.red_gain);
-        setBlueGain(c.blue_gain);
-        setAwbAuto(c.awb_auto);
+        setTargetFps(c.target_fps);
+        setJpegQuality(c.jpeg_quality);
         setPaused(p.paused);
       } catch {
         // Engine probably not running — keep defaults silently.
@@ -37,22 +43,40 @@ export function CameraTuner() {
     })();
   }, []);
 
-  const push = async (red: number, blue: number, auto: boolean) => {
+  const push = async (fps: number, q: number) => {
     setBusy(true);
     setError(null);
     try {
-      await api.setCameraControls({
-        red_gain: red,
-        blue_gain: blue,
-        awb_auto: auto,
-        color_matrix: null,
-      });
+      await api.setCameraControls({ target_fps: fps, jpeg_quality: q });
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed");
     } finally {
       setBusy(false);
     }
   };
+
+  // Debounce slider drags so we hit the API at most ~5x/sec instead of
+  // ~30x/sec. Otherwise the engine event loop gets starved by the POST
+  // flood and frames stop flowing — looks like the dashboard "crashed"
+  // even though mlai-api is still running.
+  const pushDebounced = (fps: number, q: number) => {
+    if (debounceRef.current !== null) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      push(fps, q);
+      debounceRef.current = null;
+    }, 200);
+  };
+
+  // Always flush on unmount so a pending value isn't lost.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current !== null) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
 
   const togglePause = async () => {
     setBusy(true);
@@ -68,36 +92,26 @@ export function CameraTuner() {
   };
 
   const reset = () => {
-    setRedGain(2.0);
-    setBlueGain(1.0);
-    setAwbAuto(true);
-    push(2.0, 1.0, true);
+    setTargetFps(DEFAULT_FPS);
+    setJpegQuality(DEFAULT_QUALITY);
+    push(DEFAULT_FPS, DEFAULT_QUALITY);
   };
 
-  // Switching to MANUAL pushes current sliders so the camera is held
-  // at exactly what the user sees on screen at that moment.
-  const setMode = (auto: boolean) => {
-    setAwbAuto(auto);
-    push(redGain, blueGain, auto);
+  const onFps = (v: number) => {
+    const intV = Math.round(v);
+    setTargetFps(intV);
+    pushDebounced(intV, jpegQuality);
   };
-
-  // Slider drags push gains AND switch to MANUAL automatically — there is
-  // no point dragging if AWB is going to override the values.
-  const onRedGain = (v: number) => {
-    setRedGain(v);
-    setAwbAuto(false);
-    push(v, blueGain, false);
-  };
-  const onBlueGain = (v: number) => {
-    setBlueGain(v);
-    setAwbAuto(false);
-    push(redGain, v, false);
+  const onQuality = (v: number) => {
+    const intV = Math.round(v);
+    setJpegQuality(intV);
+    pushDebounced(targetFps, intV);
   };
 
   return (
     <div className="panel p-3">
       <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2 mb-3">
-        <span className="label">CAMERA TUNING</span>
+        <span className="label">STREAM TUNING</span>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -123,70 +137,32 @@ export function CameraTuner() {
         </div>
       </div>
 
-      {/* AUTO / MANUAL toggle */}
-      <div className="mb-3">
-        <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-dim)] mb-1">
-          White balance
-        </div>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => setMode(true)}
-            disabled={busy}
-            className={clsx(
-              "flex-1 px-2 py-1 text-[11px] font-mono uppercase tracking-wider rounded border",
-              awbAuto
-                ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10"
-                : "border-[var(--color-border)] text-[var(--color-text-dim)]"
-            )}
-          >
-            auto
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode(false)}
-            disabled={busy}
-            className={clsx(
-              "flex-1 px-2 py-1 text-[11px] font-mono uppercase tracking-wider rounded border",
-              !awbAuto
-                ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent)]/10"
-                : "border-[var(--color-border)] text-[var(--color-text-dim)]"
-            )}
-          >
-            manual
-          </button>
-        </div>
-        <p className="text-[10px] font-mono text-[var(--color-text-mute)] mt-1">
-          AUTO uses libcamera tuning. MANUAL applies the sliders below.
-        </p>
-      </div>
-
-      <div className={clsx("transition-opacity", awbAuto && "opacity-50")}>
-        <Slider
-          label="Red gain"
-          hint="Boost reds and oranges. NoIR cameras typically want 2.0–3.5."
-          min={0.2}
-          max={5.0}
-          step={0.05}
-          value={redGain}
-          onChange={onRedGain}
-        />
-        <Slider
-          label="Blue gain"
-          hint="Lower this if the image looks too blue/cyan."
-          min={0.1}
-          max={3.0}
-          step={0.05}
-          value={blueGain}
-          onChange={onBlueGain}
-        />
-      </div>
+      <Slider
+        label="Target FPS"
+        hint="Engine + dashboard cadence. Lower if the feed stutters or CPU runs hot."
+        min={1}
+        max={30}
+        step={1}
+        value={targetFps}
+        onChange={onFps}
+        format={(v) => `${v}`}
+      />
+      <Slider
+        label="JPEG quality"
+        hint="Frame compression for the live feed. Lower = smaller frames over the wire."
+        min={30}
+        max={95}
+        step={1}
+        value={jpegQuality}
+        onChange={onQuality}
+        format={(v) => `${v}`}
+      />
 
       {error && (
         <p className="mt-2 text-[11px] font-mono text-[var(--color-fault)]">{error}</p>
       )}
       <p className="mt-2 text-[10px] font-mono text-[var(--color-text-mute)]">
-        Changes apply live. Bake favourites into <code>config/system_config.yaml</code>.
+        Changes apply live. Bake favourites into <code>config/system_config.yaml</code> (<code>camera.fps</code>, <code>camera.jpeg_quality</code>).
       </p>
     </div>
   );
@@ -200,6 +176,7 @@ function Slider({
   step,
   value,
   onChange,
+  format,
 }: {
   label: string;
   hint: string;
@@ -208,12 +185,13 @@ function Slider({
   step: number;
   value: number;
   onChange: (v: number) => void;
+  format: (v: number) => string;
 }) {
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between text-[11px] font-mono">
         <span className="text-[var(--color-text-dim)] uppercase tracking-wider">{label}</span>
-        <span className="text-[var(--color-accent)]">{value.toFixed(2)}</span>
+        <span className="text-[var(--color-accent)]">{format(value)}</span>
       </div>
       <input
         type="range"

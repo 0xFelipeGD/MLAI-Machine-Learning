@@ -21,9 +21,11 @@ Usage
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Optional
 
 import numpy as np
@@ -32,6 +34,22 @@ import yaml
 from engine import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
+
+# Number of consecutive empty reads on a stream source before we tear down
+# the VideoCapture and reopen it. At fps=5 this is ~6 s of dead air, which
+# is long enough to ride out a typical Wi-Fi hiccup but short enough that
+# the user notices a stale feed quickly.
+STREAM_RECONNECT_THRESHOLD = 30
+
+# Camera-thread read cadence for stream sources (Hz). Phones running
+# IP Webcam typically supply MJPEG at 30-60 fps; reading faster than this
+# wastes CPU on duplicate JPEG decodes that the engine never sees, while
+# reading slower lets FFmpeg's buffer accumulate stale frames behind us.
+# 30 Hz is the sweet spot: enough headroom to drain backlog, low enough
+# CPU to not starve inference + websocket. The grab() call in _grab_one
+# discards one buffered frame before each decoded read so latency stays
+# at ~33ms even when the source produces faster.
+STREAM_READ_FPS = 30
 
 # picamera2 only exists on a Raspberry Pi. Wrap the import so this module
 # still loads on a development PC where the library is missing.
@@ -57,6 +75,53 @@ def _load_camera_config() -> dict:
     with open(config_path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     return data.get("camera", {})
+
+
+_URL_RE = re.compile(r"^(https?|rtsp)://", re.IGNORECASE)
+
+
+def _resolve_backend(source: str, has_picamera2: bool) -> str:
+    """Map a config `source` value to a concrete backend kind.
+
+    Returns one of: "stream" | "picamera2" | "opencv".
+
+    A URL (http://, https://, rtsp://) resolves to "stream".
+    "auto" picks picamera2 if available, otherwise opencv.
+    "picamera2" and "opencv" are returned as-is.
+
+    Raises ValueError for any other input (typo in config, empty string, None).
+    Failing fast here gives a clear error at config-parse time instead of a
+    confusing silent fallback in _open_backend later.
+    """
+    if isinstance(source, str) and _URL_RE.match(source):
+        return "stream"
+    if source == "auto":
+        return "picamera2" if has_picamera2 else "opencv"
+    if source in ("picamera2", "opencv"):
+        return source
+    raise ValueError(
+        f"camera.source={source!r} is not a URL and not one of "
+        "{'auto', 'picamera2', 'opencv'}; check config/system_config.yaml"
+    )
+
+
+def _redact_url(url: str) -> str:
+    """Return URL with userinfo replaced by '***' for safe logging.
+
+    Best-effort: returns the original string if parsing fails or the URL
+    has no userinfo. Used in error messages and logs to avoid leaking
+    credentials embedded in stream URLs (e.g. rtsp://user:pass@host).
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    if not parsed.username and not parsed.password:
+        return url
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    safe_netloc = f"***@{host}{port}"
+    return parsed._replace(netloc=safe_netloc).geturl()
 
 
 class CameraService:
@@ -126,21 +191,45 @@ class CameraService:
         self._frame_times: list[float] = []
         self._fps: float = 0.0
 
+        # Stream-backend reconnect counter. Used by Task 3's reconnect logic;
+        # initialised here so the attribute exists from construction time.
+        self._stream_fail_count: int = 0
+
+        # Cache do backend kind resolvido. Setado em _open_backend; consultado
+        # por _grab_one (hot path) sem precisar refazer a regex match a cada
+        # frame.
+        self._is_stream: bool = False
+
     # ------------------------------------------------------------------ start
     def start(self) -> None:
-        """Open the camera and start the background grab thread."""
+        """Open the camera and start the background grab thread.
+
+        For stream sources, an initial open failure is non-fatal — the
+        background loop will keep trying to open until it succeeds. This
+        means the engine can boot before the phone IP Webcam app is
+        running, and recover automatically once the source comes up.
+        For picamera2 / opencv-local sources, an open failure is still
+        treated as fatal (nothing useful to retry against).
+        """
         if self._thread is not None:
             return
-        self._open_backend()
+        is_stream = isinstance(self.source, str) and bool(_URL_RE.match(self.source))
+        try:
+            self._open_backend()
+        except Exception:
+            if not is_stream:
+                raise
+            logger.warning(
+                "Initial stream open failed for %s; camera thread will retry",
+                _redact_url(self.source),
+            )
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="camera")
         self._thread.start()
         logger.info("CameraService started (%dx%d @ %d fps target)", self.width, self.height, self.target_fps)
 
     def _open_backend(self) -> None:
-        backend = self.source
-        if backend == "auto":
-            backend = "picamera2" if _HAS_PICAMERA2 else "opencv"
+        backend = _resolve_backend(self.source, _HAS_PICAMERA2)
 
         if backend == "picamera2" and _HAS_PICAMERA2:
             picam_kwargs = {}
@@ -161,18 +250,11 @@ class CameraService:
             cfg_kwargs = {
                 "main": {"size": (self.width, self.height), "format": "RGB888"},
             }
-            # Controls baked into the configuration apply from frame 1, before
-            # the AWB algorithm has a chance to "balance" anything. Setting
-            # them via set_controls() after start() is too late on NoIR — the
-            # first batch of frames comes out with default AWB and the auto
-            # exposure latches onto them.
             if self._picam_controls:
                 cfg_kwargs["controls"] = dict(self._picam_controls)
             video_cfg = self._picam.create_video_configuration(**cfg_kwargs)
             self._picam.configure(video_cfg)
             self._picam.start()
-            # Re-assert controls after start in case the configuration path
-            # silently dropped them (libcamera version quirks).
             if self._picam_controls:
                 try:
                     self._picam.set_controls(self._picam_controls)
@@ -181,7 +263,44 @@ class CameraService:
             time.sleep(0.5)  # warm-up
             return
 
-        # OpenCV fallback (PC dev or Pi without picamera2)
+        if backend == "stream":
+            # Network camera (phone, IP webcam, RTSP). The OpenCV grab path
+            # is identical to the local /dev/video0 case below — only the
+            # VideoCapture constructor argument changes. CAP_FFMPEG makes
+            # the demuxer choice deterministic across machines that have
+            # both GStreamer and FFmpeg backends compiled in.
+            self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            safe_url = _redact_url(self.source)
+            if not self._cap.isOpened():
+                # Reset to None so the caller / _loop can detect the
+                # 'no backend' state and retry. cv2.VideoCapture returns
+                # a non-None object even on failure, which would defeat
+                # the `if self._cap is None: try _open_backend` loop.
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+                self._cap = None
+                raise RuntimeError(f"OpenCV could not open stream: {safe_url}")
+            # Hint to keep FFmpeg's internal queue at 1 frame so cap.read()
+            # always returns the latest frame instead of accumulating delay
+            # when our consume rate is slower than the source's produce rate.
+            # Some FFmpeg builds ignore this; the _loop also drains by not
+            # sleeping on stream sources (see below).
+            try:
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                # Bound cv2.read() blocking. Without this, FFmpeg can hang
+                # for tens of seconds when a TCP stream stalls (phone IP
+                # Webcam restarted mid-stream, Wi-Fi blip), preventing the
+                # auto-reconnect path in _grab_one from triggering.
+                self._cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
+            except Exception:
+                pass
+            logger.info("CameraService stream backend opened: %s", safe_url)
+            self._is_stream = True
+            return
+
+        # OpenCV local fallback (PC dev or Pi without picamera2)
         self._cap = cv2.VideoCapture(0)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
@@ -193,6 +312,15 @@ class CameraService:
     def _loop(self) -> None:
         period = 1.0 / max(self.target_fps, 1)
         while not self._stop.is_set():
+            # Stream-source case where the initial open failed (phone
+            # wasn't streaming when the Pi booted). Keep trying so the
+            # camera comes alive automatically once the source is up.
+            if self._cap is None and self._picam is None:
+                try:
+                    self._open_backend()
+                except Exception:
+                    time.sleep(2.0)
+                    continue
             t0 = time.time()
             try:
                 frame = self._grab_one()
@@ -207,9 +335,22 @@ class CameraService:
                     self._frame_times.append(now)
                     self._frame_times = [t for t in self._frame_times if now - t <= 1.0]
                     self._fps = float(len(self._frame_times))
-            elapsed = time.time() - t0
-            if elapsed < period:
-                time.sleep(period - elapsed)
+            # picamera2 / OpenCV-local: throttle to target_fps. Stream
+            # backends throttle to STREAM_READ_FPS — high enough to avoid
+            # FFmpeg buffer accumulation (which causes seconds of delay)
+            # but low enough not to peg the CPU decoding 60 fps of MJPEG
+            # when the engine only consumes 10 fps. The grab() call in
+            # _grab_one pre-drains any backlog so cap.read() returns the
+            # latest, not the next-buffered.
+            if self._is_stream:
+                stream_period = 1.0 / STREAM_READ_FPS
+                elapsed = time.time() - t0
+                if elapsed < stream_period:
+                    time.sleep(stream_period - elapsed)
+            else:
+                elapsed = time.time() - t0
+                if elapsed < period:
+                    time.sleep(period - elapsed)
 
     def _grab_one(self) -> Optional[np.ndarray]:
         if self._picam is not None:
@@ -219,9 +360,23 @@ class CameraService:
                 rgb = self._apply_ccm(rgb)
             return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         if self._cap is not None:
+            if self._is_stream:
+                # grab() fetches the next frame WITHOUT decoding the JPEG —
+                # ~0ms when a frame is already buffered, vs ~15ms for a full
+                # read(). Calling it once before read() drains a backlog
+                # frame so the subsequent read() returns the latest, not
+                # the oldest-buffered. Combined with the throttled period
+                # in _loop, this keeps CPU sane and latency low.
+                self._cap.grab()
             ok, frame = self._cap.read()
             if not ok or frame is None:
+                if self._is_stream:
+                    self._stream_fail_count += 1
+                    if self._stream_fail_count > STREAM_RECONNECT_THRESHOLD:  # strictly greater: trigger on the (N+1)th failure
+                        self._reconnect_stream()
                 return None
+            if self._is_stream:
+                self._stream_fail_count = 0
             if self._ccm is not None:
                 # OpenCV gives BGR; CCM is RGB-shaped, so we reorder.
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -229,6 +384,41 @@ class CameraService:
                 frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             return frame
         return None
+
+    def _reconnect_stream(self) -> None:
+        """Tear down the current stream VideoCapture and reopen it."""
+        safe_url = _redact_url(self.source)
+        logger.warning(
+            "stream lost (>%d consecutive empty reads), reconnecting to %s",
+            STREAM_RECONNECT_THRESHOLD,
+            safe_url,
+        )
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                logger.exception("VideoCapture.release() raised during reconnect")
+        self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+        if self._cap.isOpened():
+            try:
+                self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self._cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
+            except Exception:
+                pass
+            logger.info("Reconnect succeeded")
+        else:
+            # Pause before allowing the next batch of reads to attempt
+            # another reconnect. Without this, the camera thread spins
+            # in a tight reconnect/refusal loop that leaks cv2/FFmpeg
+            # state — over time the connection just stops recovering
+            # even after the source comes back up.
+            logger.error("Reconnect failed; sleeping 2s before next attempt")
+            time.sleep(2.0)
+        # Reset unconditionally — even if the reopen above failed, we want
+        # to wait another STREAM_RECONNECT_THRESHOLD failures before the
+        # next attempt. Otherwise a permanently-down stream would loop us
+        # in tight reconnect attempts every frame.
+        self._stream_fail_count = 0
 
     def _apply_ccm(self, rgb: np.ndarray) -> np.ndarray:
         """Apply the configured 3x3 color matrix to an HxWx3 uint8 RGB frame."""

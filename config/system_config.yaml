@@ -13,7 +13,10 @@ camera:
   # Capture resolution. Lower = faster, higher = more detail.
   resolution: [640, 480]
   # Target frames per second sent to the inference engine.
-  fps: 5
+  fps: 25
+  # JPEG encode quality for frames sent to the dashboard (30-95).
+  # Lower = smaller frames over WebSocket, higher = sharper image.
+  jpeg_quality: 60
   exposure_mode: auto
   # libcamera tuning file. The KEY fix for NoIR sensors: force the regular
   # RGB tuning (imx708.json) instead of letting libcamera auto-pick the IR
@@ -29,8 +32,18 @@ camera:
   # Manual red/blue gains (only consulted when awb_mode == 'manual').
   # The dashboard 'Camera Tuning' sliders write to these at runtime.
   colour_gains: [2.0, 1.0]
-  # Use libcamera/picamera2 on Pi; falls back to OpenCV VideoCapture(0) on PC.
-  source: auto  # auto | picamera2 | opencv
+  # Capture source. Accepts:
+  #   auto       — picamera2 if available, else OpenCV /dev/video0
+  #   picamera2  — Raspberry Pi camera via libcamera/picamera2
+  #   opencv     — local USB/CSI camera via OpenCV /dev/video0
+  #   <URL>      — HTTP MJPEG or RTSP stream from a phone/IP camera.
+  #                Example: "http://10.107.97.1:8080/video" (IP Webcam app
+  #                on a Samsung phone acting as Wi-Fi hotspot, where the Pi
+  #                connects through the phone — see README §9 for setup).
+  #                The picamera2-only fields below (tuning_file, awb_mode,
+  #                colour_gains) are silently ignored on stream sources.
+  #                The post-capture color_matrix still applies if non-identity.
+  source: "http://10.107.97.14:8080/video"
   # 3x3 color correction matrix applied AFTER the manual gains. Identity
   # by default — the tuning_file already does proper colour science, so
   # the CCM is just a touch-up if you want one.
