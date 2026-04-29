@@ -128,3 +128,28 @@ def test_open_backend_stream_raises_when_open_fails():
     with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap):
         with pytest.raises(RuntimeError, match="stream"):
             cam._open_backend()
+
+
+def test_redact_url_strips_credentials():
+    from engine.camera import _redact_url
+
+    assert _redact_url("rtsp://user:pass@10.107.97.1:554/stream") == "rtsp://***@10.107.97.1:554/stream"
+
+
+def test_redact_url_passthrough_when_no_credentials():
+    from engine.camera import _redact_url
+
+    assert _redact_url("http://10.107.97.1:8080/video") == "http://10.107.97.1:8080/video"
+
+
+def test_open_backend_stream_error_does_not_leak_credentials():
+    cam = _make_service_with_source("rtsp://secretuser:secretpass@10.107.97.1:554/stream")
+    fake_cap = MagicMock()
+    fake_cap.isOpened.return_value = False
+    with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap):
+        with pytest.raises(RuntimeError) as exc_info:
+            cam._open_backend()
+    err = str(exc_info.value)
+    assert "secretpass" not in err
+    assert "secretuser" not in err
+    assert "10.107.97.1" in err  # host should still be present for debugging

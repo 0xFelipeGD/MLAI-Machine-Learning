@@ -25,6 +25,7 @@ import re
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Optional
 
 import numpy as np
@@ -86,6 +87,25 @@ def _resolve_backend(source: str, has_picamera2: bool) -> str:
         f"camera.source={source!r} is not a URL and not one of "
         "{'auto', 'picamera2', 'opencv'}; check config/system_config.yaml"
     )
+
+
+def _redact_url(url: str) -> str:
+    """Return URL with userinfo replaced by '***' for safe logging.
+
+    Best-effort: returns the original string if parsing fails or the URL
+    has no userinfo. Used in error messages and logs to avoid leaking
+    credentials embedded in stream URLs (e.g. rtsp://user:pass@host).
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    if not parsed.username and not parsed.password:
+        return url
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    safe_netloc = f"***@{host}{port}"
+    return parsed._replace(netloc=safe_netloc).geturl()
 
 
 class CameraService:
@@ -155,6 +175,10 @@ class CameraService:
         self._frame_times: list[float] = []
         self._fps: float = 0.0
 
+        # Stream-backend reconnect counter. Used by Task 3's reconnect logic;
+        # initialised here so the attribute exists from construction time.
+        self._stream_fail_count: int = 0
+
     # ------------------------------------------------------------------ start
     def start(self) -> None:
         """Open the camera and start the background grab thread."""
@@ -208,9 +232,10 @@ class CameraService:
             # the demuxer choice deterministic across machines that have
             # both GStreamer and FFmpeg backends compiled in.
             self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            safe_url = _redact_url(self.source)
             if not self._cap.isOpened():
-                raise RuntimeError(f"OpenCV could not open stream: {self.source}")
-            logger.info("CameraService stream backend opened: %s", self.source)
+                raise RuntimeError(f"OpenCV could not open stream: {safe_url}")
+            logger.info("CameraService stream backend opened: %s", safe_url)
             return
 
         # OpenCV local fallback (PC dev or Pi without picamera2)
