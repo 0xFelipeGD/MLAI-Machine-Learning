@@ -167,9 +167,7 @@ class CameraService:
         logger.info("CameraService started (%dx%d @ %d fps target)", self.width, self.height, self.target_fps)
 
     def _open_backend(self) -> None:
-        backend = self.source
-        if backend == "auto":
-            backend = "picamera2" if _HAS_PICAMERA2 else "opencv"
+        backend = _resolve_backend(self.source, _HAS_PICAMERA2)
 
         if backend == "picamera2" and _HAS_PICAMERA2:
             picam_kwargs = {}
@@ -190,18 +188,11 @@ class CameraService:
             cfg_kwargs = {
                 "main": {"size": (self.width, self.height), "format": "RGB888"},
             }
-            # Controls baked into the configuration apply from frame 1, before
-            # the AWB algorithm has a chance to "balance" anything. Setting
-            # them via set_controls() after start() is too late on NoIR — the
-            # first batch of frames comes out with default AWB and the auto
-            # exposure latches onto them.
             if self._picam_controls:
                 cfg_kwargs["controls"] = dict(self._picam_controls)
             video_cfg = self._picam.create_video_configuration(**cfg_kwargs)
             self._picam.configure(video_cfg)
             self._picam.start()
-            # Re-assert controls after start in case the configuration path
-            # silently dropped them (libcamera version quirks).
             if self._picam_controls:
                 try:
                     self._picam.set_controls(self._picam_controls)
@@ -210,7 +201,19 @@ class CameraService:
             time.sleep(0.5)  # warm-up
             return
 
-        # OpenCV fallback (PC dev or Pi without picamera2)
+        if backend == "stream":
+            # Network camera (phone, IP webcam, RTSP). The OpenCV grab path
+            # is identical to the local /dev/video0 case below — only the
+            # VideoCapture constructor argument changes. CAP_FFMPEG makes
+            # the demuxer choice deterministic across machines that have
+            # both GStreamer and FFmpeg backends compiled in.
+            self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            if not self._cap.isOpened():
+                raise RuntimeError(f"OpenCV could not open stream: {self.source}")
+            logger.info("CameraService stream backend opened: %s", self.source)
+            return
+
+        # OpenCV local fallback (PC dev or Pi without picamera2)
         self._cap = cv2.VideoCapture(0)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)

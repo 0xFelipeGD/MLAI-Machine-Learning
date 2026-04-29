@@ -72,3 +72,59 @@ def test_resolve_backend_rejects_none():
 
     with pytest.raises(ValueError, match="camera.source"):
         _resolve_backend(None, has_picamera2=True)  # type: ignore[arg-type]
+
+
+def _make_service_with_source(source: str) -> "CameraService":
+    """Helper: build a CameraService with a forced source, bypassing config."""
+    from engine.camera import CameraService
+
+    cam = CameraService.__new__(CameraService)
+    cam.width = 640
+    cam.height = 480
+    cam.target_fps = 5
+    cam.source = source
+    cam._ccm = None
+    cam._tuning_file = None
+    cam._picam_controls = {}
+    cam._cap = None
+    cam._picam = None
+    cam._latest = None
+    import threading
+
+    cam._lock = threading.Lock()
+    cam._stop = threading.Event()
+    cam._thread = None
+    cam._frame_times = []
+    cam._fps = 0.0
+    cam._stream_fail_count = 0
+    return cam
+
+
+def test_open_backend_stream_uses_ffmpeg():
+    cam = _make_service_with_source("http://10.107.97.1:8080/video")
+    fake_cap = MagicMock()
+    fake_cap.isOpened.return_value = True
+    with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap) as vc:
+        cam._open_backend()
+    vc.assert_called_once_with("http://10.107.97.1:8080/video", pytest.importorskip("cv2").CAP_FFMPEG)
+    assert cam._cap is fake_cap
+    assert cam._picam is None
+
+
+def test_open_backend_opencv_local_unchanged():
+    cam = _make_service_with_source("opencv")
+    fake_cap = MagicMock()
+    fake_cap.isOpened.return_value = True
+    with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap) as vc:
+        cam._open_backend()
+    vc.assert_called_once_with(0)
+    assert cam._cap is fake_cap
+
+
+def test_open_backend_stream_raises_when_open_fails():
+    cam = _make_service_with_source("http://10.107.97.1:8080/video")
+    fake_cap = MagicMock()
+    fake_cap.isOpened.return_value = False
+    with patch("engine.camera.cv2.VideoCapture", return_value=fake_cap):
+        with pytest.raises(RuntimeError, match="stream"):
+            cam._open_backend()
