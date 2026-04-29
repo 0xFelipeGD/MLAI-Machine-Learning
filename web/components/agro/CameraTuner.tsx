@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 
@@ -27,6 +27,7 @@ export function CameraTuner() {
   const [paused, setPaused] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial load — pull current values from the API.
   useEffect(() => {
@@ -54,6 +55,29 @@ export function CameraTuner() {
     }
   };
 
+  // Debounce slider drags so we hit the API at most ~5x/sec instead of
+  // ~30x/sec. Otherwise the engine event loop gets starved by the POST
+  // flood and frames stop flowing — looks like the dashboard "crashed"
+  // even though mlai-api is still running.
+  const pushDebounced = (fps: number, q: number) => {
+    if (debounceRef.current !== null) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      push(fps, q);
+      debounceRef.current = null;
+    }, 200);
+  };
+
+  // Always flush on unmount so a pending value isn't lost.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current !== null) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
   const togglePause = async () => {
     setBusy(true);
     setError(null);
@@ -76,12 +100,12 @@ export function CameraTuner() {
   const onFps = (v: number) => {
     const intV = Math.round(v);
     setTargetFps(intV);
-    push(intV, jpegQuality);
+    pushDebounced(intV, jpegQuality);
   };
   const onQuality = (v: number) => {
     const intV = Math.round(v);
     setJpegQuality(intV);
-    push(targetFps, intV);
+    pushDebounced(targetFps, intV);
   };
 
   return (
