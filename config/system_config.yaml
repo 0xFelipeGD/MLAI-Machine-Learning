@@ -11,9 +11,12 @@ system:
 
 camera:
   # Capture resolution. Lower = faster, higher = more detail.
-  resolution: [640, 480]
+  # For stream sources, this is a hint to OpenCV — the actual frame size
+  # is whatever the phone app sends. 1280x720 matches the IP Webcam
+  # default; 4K saturates Wi-Fi.
+  resolution: [1280, 720]
   # Target frames per second sent to the inference engine.
-  fps: 5
+  fps: 15
   exposure_mode: auto
   # libcamera tuning file. The KEY fix for NoIR sensors: force the regular
   # RGB tuning (imx708.json) instead of letting libcamera auto-pick the IR
