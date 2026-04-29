@@ -40,7 +40,7 @@ camera:
   #                The picamera2-only fields below (tuning_file, awb_mode,
   #                colour_gains) are silently ignored on stream sources.
   #                The post-capture color_matrix still applies if non-identity.
-  source: auto
+  source: "http://10.107.97.14:8080/video"
   # 3x3 color correction matrix applied AFTER the manual gains. Identity
   # by default — the tuning_file already does proper colour science, so
   # the CCM is just a touch-up if you want one.
