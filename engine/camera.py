@@ -70,13 +70,22 @@ def _resolve_backend(source: str, has_picamera2: bool) -> str:
 
     A URL (http://, https://, rtsp://) resolves to "stream".
     "auto" picks picamera2 if available, otherwise opencv.
-    Any other string is taken at face value (must be "picamera2" or "opencv").
+    "picamera2" and "opencv" are returned as-is.
+
+    Raises ValueError for any other input (typo in config, empty string, None).
+    Failing fast here gives a clear error at config-parse time instead of a
+    confusing silent fallback in _open_backend later.
     """
     if isinstance(source, str) and _URL_RE.match(source):
         return "stream"
     if source == "auto":
         return "picamera2" if has_picamera2 else "opencv"
-    return source
+    if source in ("picamera2", "opencv"):
+        return source
+    raise ValueError(
+        f"camera.source={source!r} is not a URL and not one of "
+        "{'auto', 'picamera2', 'opencv'}; check config/system_config.yaml"
+    )
 
 
 class CameraService:

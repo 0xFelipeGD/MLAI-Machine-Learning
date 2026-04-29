@@ -51,3 +51,24 @@ def test_resolve_backend_auto_without_picamera2():
     from engine.camera import _resolve_backend
 
     assert _resolve_backend("auto", has_picamera2=False) == "opencv"
+
+
+def test_resolve_backend_rejects_unknown_string():
+    from engine.camera import _resolve_backend
+
+    with pytest.raises(ValueError, match="camera.source"):
+        _resolve_backend("picam", has_picamera2=True)
+
+
+def test_resolve_backend_rejects_empty_string():
+    from engine.camera import _resolve_backend
+
+    with pytest.raises(ValueError, match="camera.source"):
+        _resolve_backend("", has_picamera2=True)
+
+
+def test_resolve_backend_rejects_none():
+    from engine.camera import _resolve_backend
+
+    with pytest.raises(ValueError, match="camera.source"):
+        _resolve_backend(None, has_picamera2=True)  # type: ignore[arg-type]
