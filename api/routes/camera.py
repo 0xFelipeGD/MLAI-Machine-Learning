@@ -46,37 +46,18 @@ async def get_config() -> CameraConfigResponse:
 
 @router.get("/controls", response_model=CameraControls)
 async def get_controls() -> CameraControls:
-    """Read the live camera tuning (gains + CCM + AWB mode)."""
-    cam = STATE.camera
-    if cam is None or not hasattr(cam, "get_controls"):
-        # Engine isn't running — fall back to config defaults.
-        cfg = _camera_cfg()
-        gains = cfg.get("colour_gains") or [1.0, 1.0]
-        return CameraControls(
-            red_gain=float(gains[0]),
-            blue_gain=float(gains[1]),
-            awb_auto=(cfg.get("awb_mode") or "auto").lower() == "auto",
-            color_matrix=cfg.get("color_matrix"),
-        )
-    c = cam.get_controls()  # type: ignore[attr-defined]
+    """Current target FPS + JPEG quality (the dashboard's two live knobs)."""
     return CameraControls(
-        red_gain=float(c["red_gain"]),
-        blue_gain=float(c["blue_gain"]),
-        awb_auto=bool(c.get("awb_auto", True)),
-        color_matrix=c.get("color_matrix"),
+        target_fps=int(STATE.target_fps),
+        jpeg_quality=int(STATE.jpeg_quality),
     )
 
 
 @router.post("/controls", response_model=CameraControls)
 async def set_controls(req: CameraControls) -> CameraControls:
-    """Live-update the camera tuning. Takes effect immediately, no restart."""
-    cam = STATE.camera
-    if cam is None:
-        raise HTTPException(status_code=503, detail="camera not running")
-    if hasattr(cam, "update_gains"):
-        cam.update_gains(req.red_gain, req.blue_gain, awb_auto=req.awb_auto)  # type: ignore[attr-defined]
-    if req.color_matrix is not None and hasattr(cam, "update_color_matrix"):
-        cam.update_color_matrix(req.color_matrix)  # type: ignore[attr-defined]
+    """Update target FPS + JPEG quality at runtime. No restart needed."""
+    STATE.target_fps = int(req.target_fps)
+    STATE.jpeg_quality = int(req.jpeg_quality)
     return await get_controls()
 
 

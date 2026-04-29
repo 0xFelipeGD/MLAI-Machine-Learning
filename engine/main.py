@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 
 
 def _encode_jpeg_b64(img) -> str:
-    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    quality = int(STATE.jpeg_quality)
+    if quality < 30:
+        quality = 30
+    elif quality > 95:
+        quality = 95
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     if not ok:
         return ""
     return base64.b64encode(buf.tobytes()).decode("ascii")
@@ -42,9 +47,16 @@ class Engine:
         cfg_path = PROJECT_ROOT / "config" / "system_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as fh:
             self.cfg = yaml.safe_load(fh) or {}
-        self.fps_target = int((self.cfg.get("camera") or {}).get("fps", 5))
+        cam_cfg = self.cfg.get("camera") or {}
+        self.fps_target = int(cam_cfg.get("fps", 5))
         self.num_threads = int((self.cfg.get("inference") or {}).get("num_threads", 4))
         self.prune_days = int((self.cfg.get("storage") or {}).get("prune_after_days", 30))
+
+        # Seed runtime-mutable knobs from config so the dashboard sliders
+        # start where the YAML says. Sliders mutate STATE; "bake favourites"
+        # by editing the YAML and restarting.
+        STATE.target_fps = self.fps_target
+        STATE.jpeg_quality = int(cam_cfg.get("jpeg_quality", 80))
 
         self.camera = CameraService()
         self.agro: Optional[AgroPipeline] = None
@@ -68,9 +80,11 @@ class Engine:
         self._stop.set()
 
     async def run(self) -> None:
-        period = 1.0 / max(self.fps_target, 1)
         last_prune = time.time()
         while not self._stop.is_set():
+            # Re-read each iteration so the dashboard slider takes effect
+            # without restarting the engine.
+            period = 1.0 / max(int(STATE.target_fps), 1)
             t0 = time.perf_counter()
             frame = self.camera.read()
             if frame is None:
