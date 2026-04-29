@@ -272,6 +272,15 @@ class CameraService:
             self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
             safe_url = _redact_url(self.source)
             if not self._cap.isOpened():
+                # Reset to None so the caller / _loop can detect the
+                # 'no backend' state and retry. cv2.VideoCapture returns
+                # a non-None object even on failure, which would defeat
+                # the `if self._cap is None: try _open_backend` loop.
+                try:
+                    self._cap.release()
+                except Exception:
+                    pass
+                self._cap = None
                 raise RuntimeError(f"OpenCV could not open stream: {safe_url}")
             # Hint to keep FFmpeg's internal queue at 1 frame so cap.read()
             # always returns the latest frame instead of accumulating delay
