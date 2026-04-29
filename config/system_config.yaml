@@ -13,7 +13,7 @@ camera:
   # Capture resolution. Lower = faster, higher = more detail.
   resolution: [640, 480]
   # Target frames per second sent to the inference engine.
-  fps: 5
+  fps: 10
   exposure_mode: auto
   # libcamera tuning file. The KEY fix for NoIR sensors: force the regular
   # RGB tuning (imx708.json) instead of letting libcamera auto-pick the IR
