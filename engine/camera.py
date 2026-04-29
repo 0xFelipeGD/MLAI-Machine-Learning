@@ -41,6 +41,16 @@ logger = logging.getLogger(__name__)
 # the user notices a stale feed quickly.
 STREAM_RECONNECT_THRESHOLD = 30
 
+# Camera-thread read cadence for stream sources (Hz). Phones running
+# IP Webcam typically supply MJPEG at 30-60 fps; reading faster than this
+# wastes CPU on duplicate JPEG decodes that the engine never sees, while
+# reading slower lets FFmpeg's buffer accumulate stale frames behind us.
+# 30 Hz is the sweet spot: enough headroom to drain backlog, low enough
+# CPU to not starve inference + websocket. The grab() call in _grab_one
+# discards one buffered frame before each decoded read so latency stays
+# at ~33ms even when the source produces faster.
+STREAM_READ_FPS = 30
+
 # picamera2 only exists on a Raspberry Pi. Wrap the import so this module
 # still loads on a development PC where the library is missing.
 try:
@@ -285,12 +295,19 @@ class CameraService:
                     self._frame_times.append(now)
                     self._frame_times = [t for t in self._frame_times if now - t <= 1.0]
                     self._fps = float(len(self._frame_times))
-            # Stream backends self-pace via cap.read() blocking on the network
-            # producer; sleeping here just lets FFmpeg buffer incoming frames,
-            # adding seconds of delay to the dashboard. The engine reads from
-            # _latest at its own target_fps, so the camera thread is free to
-            # run as fast as the source supplies.
-            if not self._is_stream:
+            # picamera2 / OpenCV-local: throttle to target_fps. Stream
+            # backends throttle to STREAM_READ_FPS — high enough to avoid
+            # FFmpeg buffer accumulation (which causes seconds of delay)
+            # but low enough not to peg the CPU decoding 60 fps of MJPEG
+            # when the engine only consumes 10 fps. The grab() call in
+            # _grab_one pre-drains any backlog so cap.read() returns the
+            # latest, not the next-buffered.
+            if self._is_stream:
+                stream_period = 1.0 / STREAM_READ_FPS
+                elapsed = time.time() - t0
+                if elapsed < stream_period:
+                    time.sleep(stream_period - elapsed)
+            else:
                 elapsed = time.time() - t0
                 if elapsed < period:
                     time.sleep(period - elapsed)
@@ -303,6 +320,14 @@ class CameraService:
                 rgb = self._apply_ccm(rgb)
             return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         if self._cap is not None:
+            if self._is_stream:
+                # grab() fetches the next frame WITHOUT decoding the JPEG —
+                # ~0ms when a frame is already buffered, vs ~15ms for a full
+                # read(). Calling it once before read() drains a backlog
+                # frame so the subsequent read() returns the latest, not
+                # the oldest-buffered. Combined with the throttled period
+                # in _loop, this keeps CPU sane and latency low.
+                self._cap.grab()
             ok, frame = self._cap.read()
             if not ok or frame is None:
                 if self._is_stream:
