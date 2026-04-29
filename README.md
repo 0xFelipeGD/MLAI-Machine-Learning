@@ -24,6 +24,7 @@
   - [6. Open the dashboard](#6-open-the-dashboard)
   - [7. Train your own models (optional)](#7-train-your-own-models-optional)
   - [8. Camera calibration (optional)](#8-camera-calibration-optional)
+  - [9. Use an Android phone as the camera (alternative)](#9-use-an-android-phone-as-the-camera-alternative)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [API Reference](#api-reference)
@@ -108,7 +109,7 @@ PC          SSH tunnel + open browser      →  §6
 - Raspberry Pi 4 Model B with **8 GB RAM** (4 GB works but the dashboard is slower)
 - Official 27 W USB-C power supply
 - microSD card, **32 GB+**, Class 10 / A2
-- Raspberry Pi Camera Module 3 + ribbon cable
+- Raspberry Pi Camera Module 3 + ribbon cable — *or* a recent Android phone running an MJPEG webcam app (see [§9](#9-use-an-android-phone-as-the-camera-alternative))
 - Ethernet or Wi-Fi
 - Optional: case + fan, light source, printed checkerboard for calibration
 
@@ -254,6 +255,76 @@ Calibration teaches the camera the pixel-to-millimetre relationship so MLAI can 
 
 4. Hold the board at different angles/distances. Press **SPACE** when corners are drawn in green — capture at least **15** poses.
 5. Press **ENTER** to compute and save. Result lands in `config/camera_calibration.json`.
+
+### 9. Use an Android phone as the camera (alternative)
+
+Instead of the Pi Camera Module, you can stream from an Android phone over Wi-Fi. This is useful when you want better colour fidelity than the NoIR sensor or higher resolution than the Camera Module 3 provides — the phone's ISP does the heavy lifting and the Pi just consumes frames.
+
+**One-time phone setup**
+
+1. Install **IP Webcam** by Pavel Khlebovich from the Play Store (free).
+2. Open the app. Optional but recommended: scroll to **Video preferences → Photo resolution** and pick a 720p or 1080p mode (4K MJPEG saturates Wi-Fi).
+3. Scroll to the bottom and tap **Start server**.
+4. The screen now shows the stream URL, e.g. `http://192.0.2.42:8080`. The Pi will connect to `<that-ip>:8080/video`.
+
+**Connect the Pi to the phone hotspot**
+
+If the phone is also routing the Pi's internet via hotspot, you already have the network. Otherwise, enable the hotspot on the phone and join it from the Pi (`raspi-config` → **System Options → Wireless LAN**).
+
+**Find the phone's IP from the Pi**
+
+The phone (as the hotspot AP) is the Pi's default gateway:
+
+```bash
+ip route | awk '/default/ {print $3}'
+# example output: 10.107.97.1
+```
+
+That IP is what you put in the config below.
+
+**Configure MLAI**
+
+Edit `config/system_config.yaml`, replacing the value of `source`:
+
+```yaml
+camera:
+  source: "http://10.107.97.1:8080/video"   # <-- substitute your gateway IP
+```
+
+Then restart the API service:
+
+```bash
+sudo systemctl restart mlai-api
+```
+
+Open the dashboard (`http://<pi-ip>:3000`) — the live page now shows the phone view.
+
+**Notes**
+
+- **Re-run camera calibration.** `config/camera_calibration.json` was computed for the Pi camera lens; it is invalid for the phone. Run `python3 scripts/calibrate_camera.py` again with the phone mounted in its final position. Until you do, MLAI falls back to pixel measurements.
+- **Camera Tuning sliders.** AWB / red-gain / blue-gain sliders are picamera2-only and are inert when streaming from a phone — the phone's ISP owns colour. The CCM matrix sliders still apply as a post-capture filter.
+- **Stream stutters.** Drop the phone-side resolution. 720p MJPEG over a hotspot is comfortably above the project's 3 FPS target.
+- **Reconnect.** If the phone goes to sleep or Wi-Fi blips, MLAI auto-reconnects after ~6 s of dead air. No manual intervention.
+
+#### Updating an existing install
+
+If MLAI is already running on the Pi and you want to add this feature, the upgrade is backend-only — the dashboard build is untouched.
+
+```bash
+ssh felipe@mlai.local
+cd ~/MLAI-Machine-Learning
+git pull
+sudo systemctl restart mlai-api
+```
+
+That's the whole list. Specifically, you do **not** need to:
+
+- `pip install -r requirements.txt` — no new dependencies were added.
+- `npm run build` in `web/` — frontend is unchanged.
+- `sudo systemctl restart mlai-web` — only `mlai-api` was updated.
+- `bash scripts/download_models.sh` — no model changes.
+
+After the restart, edit `config/system_config.yaml` to set `source` to your phone's stream URL (see *Configure MLAI* above) — or leave it as `auto` if you're not switching cameras yet.
 
 ---
 
