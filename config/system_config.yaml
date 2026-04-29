@@ -13,7 +13,10 @@ camera:
   # Capture resolution. Lower = faster, higher = more detail.
   resolution: [640, 480]
   # Target frames per second sent to the inference engine.
-  fps: 10
+  fps: 25
+  # JPEG encode quality for frames sent to the dashboard (30-95).
+  # Lower = smaller frames over WebSocket, higher = sharper image.
+  jpeg_quality: 60
   exposure_mode: auto
   # libcamera tuning file. The KEY fix for NoIR sensors: force the regular
   # RGB tuning (imx708.json) instead of letting libcamera auto-pick the IR
