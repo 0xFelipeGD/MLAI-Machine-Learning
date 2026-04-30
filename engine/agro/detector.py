@@ -234,23 +234,27 @@ class FruitDetector:
             )
             detections.append(Detection(class_name=cls_name, confidence=conf, bbox=bbox))
 
-        # Diagnostic: when we kept zero detections, log the top 5 raw model
-        # outputs every ~30 frames (~1s at 25 fps). Lets us see whether the
-        # model fired at all and what classes/scores it produced — useful
-        # when 'nothing detected' is ambiguous between low score, off-class,
-        # and the model being silent.
+        # Diagnostic: log the model's top 5 raw scores every ~30 frames
+        # (~1s at 25 fps). WARNING level so it actually appears under
+        # uvicorn's default log config (root logger sits at WARNING for
+        # non-uvicorn modules; INFO would be silenced). Fires regardless
+        # of whether anything passed our class/threshold filter — that
+        # way we can see when the model fires below the threshold or
+        # at the wrong class index.
         self._frame_counter += 1
-        if not detections and self._frame_counter % 30 == 0 and len(scores) > 0:
+        if self._frame_counter % 30 == 0 and len(scores) > 0:
             n = min(len(scores), 5)
             top = sorted(
                 ((int(classes[i]), float(scores[i])) for i in range(min(len(scores), 10))),
                 key=lambda x: -x[1],
             )[:n]
-            logger.info(
-                "detector raw top-%d (coco_idx, score): %s | filtered set: %s",
+            logger.warning(
+                "detector raw top-%d (coco_idx, score): %s | kept=%d | filter=%s | thr=%.2f",
                 n,
                 top,
+                len(detections),
                 sorted(self._coco_to_fruit.keys()) if self._coco_to_fruit else "positional",
+                self.threshold,
             )
         return detections
 
