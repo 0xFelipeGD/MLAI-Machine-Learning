@@ -70,6 +70,10 @@ class FruitDetector:
         # Empty when no labels file is present, in which case detect() falls
         # back to positional indexing into self.classes for compatibility.
         self._coco_to_fruit: Dict[int, str] = {}
+        # Diagnostic counter — every Nth call to detect() that produces no
+        # filtered output, log the model's top raw scores so we can tell
+        # whether the model is silent or just below threshold / off-class.
+        self._frame_counter: int = 0
 
     # ------------------------------------------------------------------ load
     def load(
@@ -229,6 +233,25 @@ class FruitDetector:
                 int(crop_y + min(1, y2) * crop_size),
             )
             detections.append(Detection(class_name=cls_name, confidence=conf, bbox=bbox))
+
+        # Diagnostic: when we kept zero detections, log the top 5 raw model
+        # outputs every ~30 frames (~1s at 25 fps). Lets us see whether the
+        # model fired at all and what classes/scores it produced — useful
+        # when 'nothing detected' is ambiguous between low score, off-class,
+        # and the model being silent.
+        self._frame_counter += 1
+        if not detections and self._frame_counter % 30 == 0 and len(scores) > 0:
+            n = min(len(scores), 5)
+            top = sorted(
+                ((int(classes[i]), float(scores[i])) for i in range(min(len(scores), 10))),
+                key=lambda x: -x[1],
+            )[:n]
+            logger.info(
+                "detector raw top-%d (coco_idx, score): %s | filtered set: %s",
+                n,
+                top,
+                sorted(self._coco_to_fruit.keys()) if self._coco_to_fruit else "positional",
+            )
         return detections
 
     def _mock_detect(self, W: int, H: int) -> List[Detection]:
