@@ -112,8 +112,21 @@ class FruitDetector:
             logger.exception("FruitDetector load failed — MOCK MODE")
             self.mock = True
 
-    @staticmethod
-    def _build_coco_filter(model_path: Path, target_classes: List[str]) -> Dict[int, str]:
+    # COCO V1 confusion aliases. The pretrained SSD MobileNet V1 is small
+    # and routinely mislabels visually-similar food objects between
+    # neighbouring classes — round fruits especially get labelled as
+    # 'sandwich' (table food), 'donut' (round sweet), or 'sports ball'
+    # (round textureless object) depending on the scene. When a user
+    # target like 'orange' is in fruit_classes, we silently also catch
+    # detections at these alias indices and relabel them to the target.
+    # Hack-level — the right fix is a custom-trained detector (see
+    # training/README.md). Remove this dict once that's deployed.
+    COCO_V1_ALIASES: Dict[str, List[str]] = {
+        "orange": ["sandwich", "donut", "sports ball"],
+    }
+
+    @classmethod
+    def _build_coco_filter(cls, model_path: Path, target_classes: List[str]) -> Dict[int, str]:
         """Read fruit_detector.labels.txt alongside the .tflite to build a
         map of COCO indices -> our target fruit names.
 
@@ -122,6 +135,11 @@ class FruitDetector:
         align with `enumerate(lines)` directly: line 1 -> idx 0 -> "???",
         line 53 -> idx 52 -> "banana", line 54 -> idx 53 -> "apple",
         line 56 -> idx 55 -> "orange".
+
+        For each target in `target_classes`, ALSO map any COCO_V1_ALIASES
+        entries to the same target name — so the model's misclassifications
+        of e.g. 'sandwich' for 'orange' still produce 'orange' detections
+        downstream (bbox label, DB, dashboard).
 
         Returns an empty dict if the labels file is missing, in which case
         detect() falls back to positional indexing for backward compatibility.
@@ -138,11 +156,23 @@ class FruitDetector:
         # Map lower-cased target name -> original-cased name (so we preserve
         # whatever casing the user wrote in config/agro/config.yaml).
         targets = {c.lower(): c for c in target_classes}
+
+        # Expand each target with its COCO V1 confusion aliases, all
+        # pointing to the same target name. e.g. {'orange': 'orange',
+        # 'sandwich': 'orange', 'donut': 'orange', 'sports ball': 'orange'}.
+        # The user only writes 'orange' in fruit_classes; aliases are
+        # transparent.
+        alias_to_target: Dict[str, str] = {}
+        for low, original in targets.items():
+            alias_to_target[low] = original
+            for alias in cls.COCO_V1_ALIASES.get(low, []):
+                alias_to_target.setdefault(alias.lower(), original)
+
         mapping: Dict[int, str] = {}
         for idx, line in enumerate(labels_path.read_text().splitlines()):
             name = line.strip().lower()
-            if name and name in targets:
-                mapping[idx] = targets[name]
+            if name and name in alias_to_target:
+                mapping[idx] = alias_to_target[name]
         return mapping
 
     # ---------------------------------------------------------------- detect
