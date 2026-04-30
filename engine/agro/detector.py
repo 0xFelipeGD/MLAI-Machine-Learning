@@ -112,18 +112,22 @@ class FruitDetector:
             logger.exception("FruitDetector load failed — MOCK MODE")
             self.mock = True
 
-    # COCO V1 confusion aliases. The pretrained SSD MobileNet V1 is small
-    # and routinely mislabels visually-similar food objects between
-    # neighbouring classes — round fruits especially get labelled as
-    # 'sandwich' (table food), 'donut' (round sweet), or 'sports ball'
-    # (round textureless object) depending on the scene. When a user
-    # target like 'orange' is in fruit_classes, we silently also catch
-    # detections at these alias indices and relabel them to the target.
-    # Hack-level — the right fix is a custom-trained detector (see
-    # training/README.md). Remove this dict once that's deployed.
-    COCO_V1_ALIASES: Dict[str, List[str]] = {
-        "orange": ["sandwich", "donut", "sports ball"],
-    }
+    # Optional semantic aliasing — multiple labels mapping to one user
+    # target (e.g. counting both 'apple' and 'orange' as a generic 'fruit').
+    # Empty by default. Previously held a 'sandwich → orange' hack that
+    # was accidentally compensating for the LABEL_OFFSET bug below; once
+    # the offset is correct, aliases are no longer needed for the
+    # demo classes.
+    COCO_V1_ALIASES: Dict[str, List[str]] = {}
+
+    # The TFLite SSD MobileNet V1 export outputs class indices in the
+    # range [0, 89] mapping to COCO category IDs [1, 90]. Our labels
+    # file is 91 lines with `???` placeholder at idx 0 (background)
+    # and the 80 real classes at idx 1-90 with placeholder gaps where
+    # COCO has missing IDs. So `model_output_idx + 1 == labels_file_idx`.
+    # Without this offset, every detection was reported one COCO class
+    # below the truth: oranges → sandwich, chairs → cake, mice → laptop.
+    LABEL_OFFSET: int = 1
 
     @classmethod
     def _build_coco_filter(cls, model_path: Path, target_classes: List[str]) -> Dict[int, str]:
@@ -171,8 +175,13 @@ class FruitDetector:
         mapping: Dict[int, str] = {}
         for idx, line in enumerate(labels_path.read_text().splitlines()):
             name = line.strip().lower()
-            if name and name in alias_to_target:
-                mapping[idx] = alias_to_target[name]
+            if not name or name == "???":
+                continue
+            if name in alias_to_target:
+                # Model output N maps to labels file idx N+1 (placeholder at 0).
+                model_idx = idx - cls.LABEL_OFFSET
+                if model_idx >= 0:
+                    mapping[model_idx] = alias_to_target[name]
         return mapping
 
     # ---------------------------------------------------------------- detect
