@@ -511,6 +511,23 @@ sudo systemctl enable --now mlai-api mlai-web
 sudo systemctl status mlai-api mlai-web
 ```
 
+**8. Performance tuning knobs** (optional)
+
+Edit `config/system_config.yaml` under the `camera:` block to trade off latency vs CPU vs bandwidth. Defaults are tuned for a Pi 4 + phone stream and should be fine; tweak only if you observe stutters or want sharper frames.
+
+| Key | Default | What it does |
+|-----|---------|--------------|
+| `fps` | `25` | Engine inference + dashboard cadence (Hz). Lower if CPU runs hot or the feed stutters. |
+| `jpeg_quality` | `60` | JPEG encode quality (30-95) of frames sent to the dashboard via WebSocket. Lower = smaller frames over the wire (less bandwidth, more compression artifacts), higher = sharper but larger. Has **no effect** on inference accuracy — the model sees the raw decoded numpy frame, not the re-encoded JPEG. |
+| `source` | `auto` | `auto` / `picamera2` / `opencv` / a stream URL like `http://10.107.97.1:8080/video`. See §9 for phone-camera setup. |
+| `resolution` | `[640, 480]` | Hint for picamera2 / local USB; ignored for stream sources (the phone app controls actual resolution). |
+
+After editing, restart only `mlai-api`:
+
+```bash
+sudo systemctl restart mlai-api
+```
+
 ---
 
 ## Glossary
