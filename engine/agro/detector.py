@@ -148,7 +148,18 @@ class FruitDetector:
             return self._mock_detect(W, H)
 
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        resized = cv2.resize(rgb, self.input_size)
+        # Center-crop to square BEFORE resizing to the model's input shape.
+        # Without this, a 16:9 phone frame gets squashed horizontally when
+        # resized to 1:1, turning round fruits into ovals — SSD MobileNet
+        # was trained on aspect-preserving inputs and stops recognizing
+        # the distorted shapes. Boxes from the model are in [0, 1] relative
+        # to the cropped square, so we add (crop_x, crop_y) when mapping
+        # back to original-frame pixels (further down).
+        crop_size = min(H, W)
+        crop_x = (W - crop_size) // 2
+        crop_y = (H - crop_size) // 2
+        cropped = rgb[crop_y:crop_y + crop_size, crop_x:crop_x + crop_size]
+        resized = cv2.resize(cropped, self.input_size)
         dtype = self._inp[0]["dtype"]
         if dtype == np.uint8:
             x = resized.astype(np.uint8)
@@ -206,12 +217,16 @@ class FruitDetector:
                     else f"class_{cls_idx}"
                 )
 
+            # Boxes are [0, 1] in the cropped square's coordinate system.
+            # Map back to original-frame pixels: scale by crop_size, then
+            # add the crop offset so the bbox lands on the right place
+            # inside the (possibly wider) source frame.
             y1, x1, y2, x2 = boxes[i]
             bbox = (
-                int(max(0, x1) * W),
-                int(max(0, y1) * H),
-                int(min(1, x2) * W),
-                int(min(1, y2) * H),
+                int(crop_x + max(0, x1) * crop_size),
+                int(crop_y + max(0, y1) * crop_size),
+                int(crop_x + min(1, x2) * crop_size),
+                int(crop_y + min(1, y2) * crop_size),
             )
             detections.append(Detection(class_name=cls_name, confidence=conf, bbox=bbox))
         return detections
